@@ -117,7 +117,7 @@
 | Windows 另需 | [Apple 官網的 iTunes for Windows](https://www.apple.com/itunes/)（64-bit）。Microsoft Store 的「Apple Devices」不相容 |
 | 網路 | 第一次連線 iOS 17 以上的裝置時，需要從 GitHub 下載開發者映像檔（約 15 MB） |
 
-目前 GitHub Releases 沒有附上安裝檔，請從原始碼執行，或依[建置安裝檔](#建置安裝檔)自行打包。
+macOS（Apple Silicon）可從 [GitHub Releases](https://github.com/crazycat836/GeoMirage/releases/latest) 下載 `.dmg` 或 `.zip`。安裝檔沒有經過 Apple 公證，第一次開啟會被擋，到「系統設定 → 隱私權與安全性」選擇仍要開啟。Windows 目前沒有附安裝檔，請從原始碼執行，或依[建置安裝檔](#建置安裝檔)自行打包。
 
 ---
 
