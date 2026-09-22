@@ -24,6 +24,7 @@ from api._envelope import (
 from config import (
     API_HOST,
     API_PORT,
+    DATA_DIR,
     TOKEN_FILE,
     ensure_data_dir,
 )
@@ -166,6 +167,9 @@ async def lifespan(application: FastAPI):
     # (TOKEN_FILE below, settings/bookmarks/routes via API). Deferred from
     # config.py module load so tests that import config don't hit disk.
     ensure_data_dir()
+    # A privileged run that created the directory leaves it root-owned, and
+    # the next unprivileged run then can't create the token file inside it.
+    chown_back(DATA_DIR)
 
     if auth._is_auth_disabled():
         auth.API_TOKEN = ""
@@ -219,6 +223,28 @@ async def lifespan(application: FastAPI):
         wifi_keepalive_loop(keepalive_stop, app_state),
     )
 
+    # Launcher watch — opt-in via GEOMIRAGE_PARENT_PID. The packaged macOS
+    # shell starts this process with administrator rights and so cannot
+    # signal it on quit; the loop exits the backend once the shell is gone.
+    from core.parent_watch import (
+        parent_pid_from_env,
+        parent_watch_loop,
+        request_exit,
+    )
+    parent_watch_stop = asyncio.Event()
+    parent_watch_task = None
+    parent_pid = parent_pid_from_env()
+    if parent_pid is not None:
+        parent_watch_task = asyncio.create_task(
+            parent_watch_loop(
+                parent_pid,
+                parent_watch_stop,
+                on_gone=lambda: request_exit(
+                    getattr(application.state, "uvicorn_server", None),
+                ),
+            ),
+        )
+
     # Download the iOS 17+ Developer Disk Image now (only when the cache is
     # missing or outdated, e.g. after a pymobiledevice3 upgrade) so the
     # first connect mounts from disk instead of waiting on GitHub.
@@ -232,6 +258,10 @@ async def lifespan(application: FastAPI):
     # they don't unblock within the grace window.
     await _stop_background_task(liveness_task, liveness_stop, label="liveness loop")
     await _stop_background_task(keepalive_task, keepalive_stop, label="keep-alive loop")
+    if parent_watch_task is not None:
+        await _stop_background_task(
+            parent_watch_task, parent_watch_stop, label="launcher watch loop",
+        )
 
     # The download runs on a daemon thread; cancelling only stops waiting.
     ddi_prefetch_task.cancel()
@@ -433,10 +463,15 @@ if __name__ == "__main__":
     # importable as a module, so the string form fails at startup with
     # 'Could not import module "main"'. Reload is off, so nothing needs
     # the string form.
-    uvicorn.run(
+    #
+    # Server is built by hand (rather than uvicorn.run) so the launcher
+    # watch can reach ``should_exit`` — see core/parent_watch.py.
+    server = uvicorn.Server(uvicorn.Config(
         app,
         host=API_HOST,
         port=API_PORT,
         reload=False,
         log_config=UVICORN_LOG_CONFIG,
-    )
+    ))
+    app.state.uvicorn_server = server
+    server.run()

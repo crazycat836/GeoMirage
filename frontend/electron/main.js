@@ -30,8 +30,11 @@ function readSessionToken() {
 // The handler is registered at module load — well before any
 // BrowserWindow is created — so the channel is always wired up by the
 // time the renderer's preload invokes it.
-let cachedSessionToken = ''
-ipcMain.handle('session:get-token', () => cachedSessionToken)
+//
+// The file is re-read on every call: the backend writes a new token each
+// time it starts, which in a packaged build is after this process is
+// already up. The renderer asks again after a 401, and gets the new one.
+ipcMain.handle('session:get-token', () => readSessionToken())
 
 // Strip the default "File Edit View Window Help" menubar — GeoMirage has its
 // own in-window controls and the native menu only adds noise on Windows.
@@ -53,12 +56,79 @@ function resolveBackendExe() {
   return path.join(process.resourcesPath, 'backend', binName)
 }
 
+// POSIX single-quote a value for /bin/sh.
+function shQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`
+}
+
+// Quote a value as an AppleScript string literal.
+function appleScriptQuote(value) {
+  return `"${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+}
+
+// macOS: the iOS 17+ device tunnel needs root, and an .app has no
+// equivalent of the Windows `requireAdministrator` manifest. Ask for an
+// administrator password through the system dialog and start the backend
+// with those rights. The command is backgrounded so osascript returns as
+// soon as the backend is launched; its exit code tells us whether the user
+// authorised it.
+//
+// A root process can't be signalled from here, so the backend is handed our
+// pid (GEOMIRAGE_PARENT_PID) and exits by itself once this process is gone.
+// SUDO_UID / SUDO_GID / HOME make it write its files under the user's home
+// and hand their ownership back, same as a `sudo python3 start.py` run.
+let elevatedBackendStarted = false
+
+function startBackendElevated(exe) {
+  const { uid, gid } = os.userInfo()
+  // The redirect covers the whole group: `do shell script` waits for every
+  // holder of its output pipe, including the subshell that runs the group.
+  const command = [
+    '(cd', shQuote(path.dirname(exe)), '&&',
+    `HOME=${shQuote(os.homedir())}`,
+    `SUDO_UID=${uid}`,
+    `SUDO_GID=${gid}`,
+    `GEOMIRAGE_PARENT_PID=${process.pid}`,
+    `GEOMIRAGE_VERSION=${shQuote(APP_VERSION)}`,
+    `${shQuote(exe)})`,
+    '> /dev/null 2>&1 &',
+  ].join(' ')
+  const script =
+    `do shell script ${appleScriptQuote(command)} ` +
+    `with prompt ${appleScriptQuote('GeoMirage 需要管理員權限才能連線 iOS 17 以上的裝置。')} ` +
+    'with administrator privileges'
+  console.log('[electron] starting backend with administrator rights:', exe)
+  elevatedBackendStarted = true
+  const osa = spawn('/usr/bin/osascript', ['-e', script], { stdio: ['ignore', 'ignore', 'pipe'] })
+  osa.stderr.on('data', (d) => process.stderr.write(`[osascript] ${d}`))
+  osa.on('exit', (code) => {
+    if (code === 0) return
+    // Declined or failed: run unprivileged so the UI and iOS 16 and older
+    // devices still work.
+    console.warn('[electron] administrator start declined (code %s) — starting unprivileged', code)
+    elevatedBackendStarted = false
+    spawnBackend(exe)
+  })
+}
+
 function startBackend() {
   const exe = resolveBackendExe()
   if (!exe) return
+  if (process.platform === 'darwin') {
+    // Still running from an earlier window of this same app session.
+    if (elevatedBackendStarted || backendProc) return
+    startBackendElevated(exe)
+    return
+  }
+  spawnBackend(exe)
+}
+
+function spawnBackend(exe) {
   console.log('[electron] spawning backend:', exe)
   const spawnOpts = {
     cwd: path.dirname(exe),
+    // The frozen backend has no package.json to read its version from.
+    env: { ...process.env, GEOMIRAGE_VERSION: APP_VERSION },
     stdio: ['ignore', 'pipe', 'pipe'],
   }
   if (process.platform === 'win32') {
@@ -108,11 +178,6 @@ async function createWindow() {
       cb({ requestHeaders: details.requestHeaders })
     })
   } catch (e) { console.error('[electron] UA hook failed:', e) }
-
-  // Backend writes the token file before accepting any HTTP request. By
-  // the time the renderer issues its first request the file is on disk;
-  // in dev mode it's empty (GEOMIRAGE_DEV_NOAUTH=1).
-  cachedSessionToken = readSessionToken()
 
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -197,8 +262,11 @@ adoptLegacyUserData()
 
 app.whenReady().then(createWindow)
 app.on('window-all-closed', () => {
+  // macOS keeps the app (and its backend) running with no windows open;
+  // reopening from the Dock must not ask for the password again.
+  if (process.platform === 'darwin') return
   stopBackend()
-  if (process.platform !== 'darwin') app.quit()
+  app.quit()
 })
 app.on('before-quit', stopBackend)
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })

@@ -1,6 +1,6 @@
 {
   "name": "geomirage",
-  "version": "0.29.0",
+  "version": "0.30.0",
   "description": "iOS Virtual Location Simulator",
   "author": "crazycat836",
   "main": "electron/main.js",
@@ -105,7 +105,7 @@
         }
       ],
       "category": "public.app-category.developer-tools",
-      "icon": "build/icon.png",
+      "icon": "build/icon-mac.png",
       "darkModeSupport": true
     },
     "dmg": {
