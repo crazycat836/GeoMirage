@@ -641,3 +641,42 @@ def test_joystick_loop_crash_returns_engine_to_idle(lost):
             assert "boom" in errors[-1]["error"]
 
     asyncio.run(scenario())
+
+
+# ── joystick_stop while paused ────────────────────────────────────────────
+
+def test_joystick_stop_after_pause_returns_to_idle():
+    from models.schemas import Coordinate, MovementMode, SimulationState
+
+    async def scenario():
+        engine, _, recorder = _make_engine()
+        engine.current_position = Coordinate(lat=25.0, lng=121.5)
+
+        await engine.joystick_start(MovementMode.WALKING)
+        await engine.pause()
+        await engine.joystick_stop()
+
+        assert engine.state == SimulationState.IDLE
+        assert engine._pause_event.is_set()
+        assert engine._paused_from is None
+        assert recorder.states() == ["joystick", "paused", "idle"]
+
+    asyncio.run(scenario())
+
+
+def test_joystick_stop_leaves_another_modes_pause_alone():
+    from models.schemas import SimulationState
+
+    async def scenario():
+        engine, _, recorder = _make_engine()
+        engine.state = SimulationState.NAVIGATING
+        await engine.pause()
+
+        await engine.joystick_stop()
+
+        assert engine.state == SimulationState.PAUSED
+        assert engine._paused_from == SimulationState.NAVIGATING
+        assert not engine._pause_event.is_set()
+        assert recorder.states() == ["paused"]
+
+    asyncio.run(scenario())

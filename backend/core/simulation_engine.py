@@ -429,8 +429,9 @@ class SimulationEngine:
     async def joystick_stop(self) -> None:
         """Deactivate joystick mode."""
         await self._joystick.stop()
-        if self.state == SimulationState.JOYSTICK:
-            self.state = SimulationState.IDLE
+        # A pause taken in joystick mode leaves the state at PAUSED; stop
+        # has to clear that too or resume would revive a dead joystick.
+        if self._leave_joystick_state():
             await self._emit("state_change", {"state": self.state.value})
 
     async def multi_stop(
