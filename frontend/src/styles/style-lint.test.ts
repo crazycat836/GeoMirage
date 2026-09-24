@@ -49,4 +49,24 @@ describe('style lint', () => {
     const css = walk(SRC, ['.css'])
     expect(scan([...TSX, ...css], re)).toEqual([])
   })
+
+  it('every var(--x) used in src is defined somewhere (an undefined var with no fallback silently drops the declaration)', () => {
+    const css = walk(SRC, ['.css'])
+    const defined = new Set<string>()
+    const used = new Map<string, string>()
+    for (const file of [...TSX, ...css]) {
+      const src = readFileSync(file, 'utf8')
+      // CSS declarations: `--name: value`
+      for (const m of src.matchAll(/(--[\w-]+)\s*:/g)) defined.add(m[1])
+      // Inline-style custom properties set from TSX: `['--name' as string]: …`
+      for (const m of src.matchAll(/['"](--[\w-]+)['"]/g)) defined.add(m[1])
+      for (const m of src.matchAll(/var\(\s*(--[\w-]+)/g)) {
+        if (!used.has(m[1])) used.set(m[1], relative(SRC, file))
+      }
+    }
+    const undefinedVars = [...used]
+      .filter(([name]) => !defined.has(name) && !name.startsWith('--tw-'))
+      .map(([name, file]) => `${name} (${file})`)
+    expect(undefinedVars).toEqual([])
+  })
 })

@@ -403,7 +403,7 @@ export default function RoutesPanel({ onRouteLoaded }: RoutesPanelProps) {
 
       {/* Selection-mode batch toolbar */}
       {selectionMode && (
-        <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-[var(--color-bg-2)]">
+        <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-[var(--color-surface-2)]">
           <span className="text-[11px] flex-1">
             {selectedIds.size} {t('panel.route_multi_select')}
           </span>
