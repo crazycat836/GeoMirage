@@ -111,14 +111,19 @@ class MultiStopNavigator:
                 profile_name, speed_kmh, speed_min_kmh, speed_max_kmh,
             )
 
+        # In loop mode the circuit closes: each lap ends with a leg from
+        # the last stop back to the first, so the next lap starts where
+        # the device actually is.
+        stops = list(waypoints) + [waypoints[0]] if loop else list(waypoints)
+
         engine.state = SimulationState.MULTI_STOP
-        engine.total_segments = len(waypoints) - 1
+        engine.total_segments = len(stops) - 1
         engine.segment_index = 0
         engine.lap_count = 0
         engine.distance_traveled = 0.0
 
         full_total_distance = await self._emit_full_route_preview(
-            waypoints, osrm_profile, straight_line,
+            stops, osrm_profile, straight_line,
         )
 
         await engine._emit("state_change", {
@@ -152,13 +157,13 @@ class MultiStopNavigator:
             if loop and engine._user_waypoint_next >= len(waypoints):
                 engine._user_waypoint_next = 1
                 completed_distance = 0.0
-            for i in range(len(waypoints) - 1):
+            for i in range(len(stops) - 1):
                 if engine._stop_event.is_set():
                     break
 
                 engine.segment_index = i
                 leg_distance = await self._run_leg(
-                    waypoints, i, osrm_profile, straight_line,
+                    stops, i, osrm_profile, straight_line,
                     _pick_profile, completed_distance, full_total_distance,
                 )
                 completed_distance += leg_distance
@@ -167,16 +172,16 @@ class MultiStopNavigator:
                 if engine._stop_event.is_set():
                     break
 
-                wp_b = waypoints[i + 1]
+                wp_b = stops[i + 1]
                 await engine._emit("stop_reached", {
-                    "index": i + 1,
+                    "index": (i + 1) % len(waypoints),
                     "total": len(waypoints),
                     "lat": wp_b.lat,
                     "lng": wp_b.lng,
                 })
 
                 # Last stop only pauses when looping back around.
-                is_last = i == len(waypoints) - 2
+                is_last = i == len(stops) - 2
                 this_pause = _resolve_pause_seconds(
                     stop_duration, pause_enabled, pause_min, pause_max,
                 )

@@ -740,3 +740,54 @@ def test_push_failure_aborts_multi_stop_before_the_next_leg():
         assert engine.state == SimulationState.IDLE
 
     asyncio.run(scenario())
+
+
+# ── Multi-stop loop closes the circuit ────────────────────────────────────
+
+_FAST_PROFILE = {"speed_mps": 300.0, "jitter": 0.0, "update_interval": 0.01}
+
+
+def _fast_engine():
+    """Engine whose every leg runs at 3 m per 10 ms tick with no jitter."""
+    engine, service, recorder = _make_engine()
+    engine.pick_speed_profile = lambda *args, **kwargs: dict(_FAST_PROFILE)
+    return engine, service, recorder
+
+
+def _triangle():
+    from models.schemas import Coordinate
+    from services.interpolator import RouteInterpolator
+
+    a = Coordinate(lat=25.0, lng=121.5)
+    b_lat, b_lng = RouteInterpolator.move_point(a.lat, a.lng, 0.0, 30.0)
+    c_lat, c_lng = RouteInterpolator.move_point(b_lat, b_lng, 90.0, 30.0)
+    return [a, Coordinate(lat=b_lat, lng=b_lng), Coordinate(lat=c_lat, lng=c_lng)]
+
+
+def test_multi_stop_loop_walks_back_to_the_start_each_lap():
+    from models.schemas import MovementMode, SimulationState
+    from services.interpolator import RouteInterpolator
+
+    async def scenario():
+        engine, service, recorder = _fast_engine()
+        wps = _triangle()
+        engine.current_position = wps[0]
+
+        await asyncio.wait_for(engine.multi_stop(
+            wps, MovementMode.WALKING, loop=True, lap_count=2,
+            pause_enabled=False, straight_line=True,
+        ), timeout=5.0)
+        return engine, service, recorder, wps
+
+    engine, service, recorder, wps = asyncio.run(scenario())
+
+    step = _FAST_PROFILE["speed_mps"] * _FAST_PROFILE["update_interval"]
+    jumps = [
+        RouteInterpolator.haversine(a[0], a[1], b[0], b[1])
+        for a, b in zip(service.calls, service.calls[1:])
+    ]
+    assert max(jumps) <= step + 0.01
+    # The full-route preview is a closed circuit.
+    preview = next(d for t, d in recorder.events if t == "route_path")
+    assert preview["coords"][-1] == {"lat": wps[0].lat, "lng": wps[0].lng}
+    assert engine.state == SimulationState.IDLE
