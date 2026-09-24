@@ -4,6 +4,7 @@ import type { LatLng } from './sim/types'
 import {
   useSimRuntimes,
   emptyRuntime,
+  primaryRuntimeKey,
   type DeviceRuntime,
   type RuntimesMap,
 } from './sim/useSimRuntimes'
@@ -136,10 +137,17 @@ export interface UseSimulationOptions {
    * omitted, the raw error code is stored — fine for tests / non-UI use.
    */
   translateError?: (code: SimErrorCode) => string
+  /**
+   * DeviceContext's primary device udid (`connectedDevices[0]`). The
+   * derived single-device view and optimistic single-device patches
+   * follow it; null/omitted falls back to the first runtime entry.
+   */
+  primaryUdid?: string | null
 }
 
 export function useSimulation(subscribe?: WsSubscribe, options?: UseSimulationOptions) {
   const translateError = options?.translateError
+  const primaryUdid = options?.primaryUdid ?? null
   // Latest translator in a ref so the WS subscribe effect can call it
   // without listing `translateError` in its deps (which would otherwise
   // tear down + rebuild the subscriber every time the i18n language flips).
@@ -219,7 +227,7 @@ export function useSimulation(subscribe?: WsSubscribe, options?: UseSimulationOp
   // below and patched optimistically by the action handlers here. The
   // single-device fields this hook returns (currentPosition, status,
   // progress, eta, routePath) are derived from the primary entry.
-  const { runtimes, setRuntimes, updateRuntime, patchPrimaryRuntime } = useSimRuntimes()
+  const { runtimes, setRuntimes, updateRuntime, patchPrimaryRuntime } = useSimRuntimes(primaryUdid)
 
   // Tick the pause countdown at 1 Hz
   useEffect(() => {
@@ -258,14 +266,14 @@ export function useSimulation(subscribe?: WsSubscribe, options?: UseSimulationOp
     localizeError,
   })
 
-  // Derived: primary runtime feeding the single-device view below.
-  // Memoised so consumers see a stable reference between renders when
-  // `runtimes` itself is unchanged — `Object.keys(runtimes)` allocates,
-  // and re-allocating it every render churns downstream `useMemo` deps.
+  // Derived: primary runtime feeding the single-device view below —
+  // the primary device's slot (see `primaryRuntimeKey`). Memoised so
+  // consumers see a stable reference between renders when `runtimes`
+  // itself is unchanged.
   const primaryRuntime: DeviceRuntime | null = useMemo(() => {
-    const keys = Object.keys(runtimes)
-    return keys.length ? runtimes[keys[0]] : null
-  }, [runtimes])
+    const key = primaryRuntimeKey(runtimes, primaryUdid)
+    return key ? runtimes[key] : null
+  }, [runtimes, primaryUdid])
   const anyRunning = Object.values(runtimes).some((r) => isActiveState(r.state))
 
   // ── Single-device view (derived from the primary runtime) ──────────

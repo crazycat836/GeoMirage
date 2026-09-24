@@ -23,7 +23,7 @@
  * stays continuous across the udid becoming known.
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import type { LatLng } from './types'
 
 /** Reserved runtimes key for the pre-udid single-device slot. */
@@ -56,6 +56,27 @@ export interface DeviceRuntime {
 }
 
 export type RuntimesMap = Record<string, DeviceRuntime>
+
+/**
+ * Key of the primary runtime — the slot the single-device view reads.
+ *
+ * `primaryUdid` is DeviceContext's primary device (`connectedDevices[0]`),
+ * so the sim view and the device UI agree on which phone is "primary".
+ * Entries are never pruned on disconnect (the chip keeps showing
+ * "disconnected" and the pin keeps its last position), so insertion
+ * order alone would stay stuck on the first phone ever seen.
+ *
+ * Order: the primary udid's entry → the pre-udid local slot → the first
+ * entry (no device connected: keep showing the last-known device).
+ */
+export function primaryRuntimeKey(
+  runtimes: RuntimesMap,
+  primaryUdid: string | null | undefined,
+): string | null {
+  if (primaryUdid && runtimes[primaryUdid]) return primaryUdid
+  if (runtimes[LOCAL_RUNTIME_KEY]) return LOCAL_RUNTIME_KEY
+  return Object.keys(runtimes)[0] ?? null
+}
 
 export function emptyRuntime(udid: string): DeviceRuntime {
   return {
@@ -94,14 +115,18 @@ export interface UseSimRuntimesValue {
    *  write (promoting the local slot's state when one exists) so callers
    *  don't have to pre-seed the map. */
   updateRuntime: (udid: string, patch: Partial<DeviceRuntime>) => void
-  /** Patch the primary runtime (first map entry), falling back to the
-   *  reserved local slot when no device has been seen yet. Used by the
-   *  udid-less WS path and by optimistic single-device actions. */
+  /** Patch the primary runtime (the primary udid's entry, created on
+   *  demand; with no primary udid, the first map entry), falling back to
+   *  the reserved local slot when no device has been seen yet. Used by
+   *  the udid-less WS path and by optimistic single-device actions. */
   patchPrimaryRuntime: (patch: PrimaryRuntimePatch) => void
 }
 
-export function useSimRuntimes(): UseSimRuntimesValue {
+export function useSimRuntimes(primaryUdid: string | null = null): UseSimRuntimesValue {
   const [runtimes, setRuntimes] = useState<RuntimesMap>({})
+  // Read at patch time so `patchPrimaryRuntime` keeps a stable identity.
+  const primaryUdidRef = useRef(primaryUdid)
+  useEffect(() => { primaryUdidRef.current = primaryUdid }, [primaryUdid])
 
   const updateRuntime = useCallback((udid: string, patch: Partial<DeviceRuntime>) => {
     setRuntimes((prev) => {
@@ -123,11 +148,17 @@ export function useSimRuntimes(): UseSimRuntimesValue {
 
   const patchPrimaryRuntime = useCallback((patch: PrimaryRuntimePatch) => {
     setRuntimes((prev) => {
-      const key = Object.keys(prev)[0] ?? LOCAL_RUNTIME_KEY
-      const current = prev[key] ?? emptyRuntime(key)
+      const primary = primaryUdidRef.current
+      const key = primary ?? Object.keys(prev)[0] ?? LOCAL_RUNTIME_KEY
+      // First write for a known primary udid: promote the local slot, same
+      // as `updateRuntime`, so the rehydrated position carries over.
+      const local = !prev[key] && key !== LOCAL_RUNTIME_KEY ? prev[LOCAL_RUNTIME_KEY] : undefined
+      const current = prev[key] ?? (local ? { ...local, udid: key } : emptyRuntime(key))
       const resolved = typeof patch === 'function' ? patch(current) : patch
       if (Object.keys(resolved).length === 0) return prev
-      return { ...prev, [key]: { ...current, ...resolved } }
+      const next: RuntimesMap = { ...prev, [key]: { ...current, ...resolved } }
+      if (local) delete next[LOCAL_RUNTIME_KEY]
+      return next
     })
   }, [])
 

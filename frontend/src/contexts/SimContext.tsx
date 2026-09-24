@@ -142,7 +142,10 @@ export function SimProvider({ children }: SimProviderProps) {
   const translateError = useCallback((code: SimErrorCode): string => {
     return tRef.current(SIM_ERROR_KEYS[code])
   }, [])
-  const sim = useSimulation(subscribe, { translateError })
+  // Same primary as DeviceContext so the map pin / dock / space-bar and
+  // the device UI agree on which phone is primary.
+  const primaryUdid = device.primaryDevice?.udid ?? null
+  const sim = useSimulation(subscribe, { translateError, primaryUdid })
 
   // Settings live in `SimSettingsContext`. Handlers below pull values
   // from there; consumers that read settings directly should call

@@ -7,8 +7,8 @@
  *   - Per-device state (position, route, engine state, progress, ETA,
  *     tunnel health) goes into the `runtimes` map. Frames tagged with a
  *     udid target that device's slot; untagged frames target the primary
- *     slot (first map entry, falling back to the reserved local slot —
- *     see `useSimRuntimes`). The legacy single-device view in
+ *     slot (the primary device's entry, falling back to the reserved
+ *     local slot — see `useSimRuntimes`). The legacy single-device view in
  *     `useSimulation` is DERIVED from the primary runtime, so writing
  *     the runtime is sufficient to update every consumer.
  *   - Session-global state that has no per-device meaning (pause
@@ -189,7 +189,7 @@ export interface SimWsSetters {
   // Per-device runtime — the single home for device simulation state.
   setRuntimes: React.Dispatch<React.SetStateAction<RuntimesMap>>
   updateRuntime: (udid: string, patch: Partial<DeviceRuntime>) => void
-  /** Target for udid-less frames: first map entry or the local slot. */
+  /** Target for udid-less frames: primary device's entry or the local slot. */
   patchPrimaryRuntime: (patch: Partial<DeviceRuntime>) => void
   // Session-global state with no per-device counterpart.
   setBackendPositionSynced: React.Dispatch<React.SetStateAction<boolean>>
