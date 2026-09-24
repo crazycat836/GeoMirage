@@ -28,6 +28,10 @@ interface MapViewProps {
    *  the preview (any other mode). */
   flowerRadiusM?: number | null;
   randomWalkRadius: number | null;
+  /** Keep the radius circle centred where it was when this turned true
+   *  (a running random walk picks targets around its fixed start point)
+   *  instead of following the current position. */
+  randomWalkCenterPinned?: boolean;
   onMapClick: (lat: number, lng: number) => void;
   onTeleport: (lat: number, lng: number) => void;
   onNavigate: (lat: number, lng: number) => void;
@@ -61,6 +65,7 @@ function MapView({
   routePath,
   flowerRadiusM = null,
   randomWalkRadius,
+  randomWalkCenterPinned = false,
   onMapClick,
   onTeleport,
   onNavigate,
@@ -206,7 +211,7 @@ function MapView({
 
   useFlowerCircles(mapRef, waypoints, flowerRadiusM);
 
-  useRandomWalkRadius(mapRef, randomWalkRadius, currentPosition);
+  useRandomWalkRadius(mapRef, randomWalkRadius, currentPosition, randomWalkCenterPinned);
 
   const recenter = useCallback(() => {
     const map = mapRef.current;

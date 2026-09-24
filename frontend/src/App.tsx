@@ -216,6 +216,7 @@ function SimMapLayer({
           (sim.mode === SimMode.Loop || sim.mode === SimMode.MultiStop) ? simSettings.wpGenRadius :
           null
         }
+        randomWalkCenterPinned={sim.mode === SimMode.RandomWalk && sim.status.running}
         onMapClick={simActions.handleMapClick}
         onTeleport={onTeleportNow}
         onNavigate={simActions.handleNavigate}
