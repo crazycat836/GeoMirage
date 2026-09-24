@@ -1,10 +1,13 @@
 name: CI
 
 on:
+  # Every push on any branch runs the full suite, so a broken commit is
+  # caught before it reaches a PR or a release.
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 # A push to main while a PR is open against the same branch would
 # otherwise queue two redundant runs. Cancel any in-flight job on the
@@ -50,8 +53,14 @@ jobs:
           fi
 
   frontend:
-    name: Frontend (tsc + vitest + vite build)
-    runs-on: ubuntu-latest
+    name: Frontend (tsc + vitest + vite build) — ${{ matrix.os }}
+    # macOS also runs the osascript round-trip in
+    # electron/backend-command.test.mjs, which is skipped elsewhere.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: frontend
@@ -84,8 +93,14 @@ jobs:
         run: ./node_modules/.bin/vite build
 
   backend:
-    name: Backend (pytest)
-    runs-on: ubuntu-latest
+    name: Backend (pytest) — ${{ matrix.os }}
+    # The app ships for macOS, so the suite also runs there (lsof,
+    # privilege-drop and pymobiledevice3 behave differently from Linux).
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: backend
