@@ -207,10 +207,67 @@ def _report_failure(what: str, result: subprocess.CompletedProcess) -> None:
         print(f"      {line}")
 
 
+def _backend_requirements_met(req_path: str) -> bool:
+    """True when every line of *req_path* is satisfied by an installed
+    distribution, checked through ``importlib.metadata`` only.
+
+    Version specifiers are checked when ``packaging`` is importable (it
+    ships with most environments); otherwise presence alone counts.
+    Anything unparseable counts as unmet so the caller falls back to
+    asking for an unprivileged install.
+    """
+    from importlib import metadata
+
+    try:
+        from packaging.requirements import Requirement
+    except ImportError:
+        Requirement = None
+
+    try:
+        with open(req_path, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return False
+    for raw in lines:
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        if Requirement is not None:
+            try:
+                req = Requirement(line)
+            except Exception:
+                return False
+            if req.marker is not None and not req.marker.evaluate():
+                continue
+            name, spec = req.name, req.specifier
+        else:
+            name = line
+            for sep in "[<>=!~; ":
+                name = name.split(sep, 1)[0]
+            spec = None
+        try:
+            installed = metadata.version(name)
+        except metadata.PackageNotFoundError:
+            return False
+        if spec is not None and not spec.contains(installed, prereleases=True):
+            return False
+    return True
+
+
 def install_backend() -> bool:
     """Ensure backend deps are installed. Returns False when blocked or failed."""
     print("  [1/4] 檢查後端依賴...", end=" ", flush=True)
     req = os.path.join(BACKEND, "requirements.txt")
+
+    if _is_effective_root():
+        # Even `pip install --dry-run` can run an sdist's setup.py /
+        # PEP 517 backend to read its metadata, so under root check the
+        # installed distributions directly and never invoke pip.
+        if _backend_requirements_met(req):
+            print("已就緒 ✓")
+            return True
+        _refuse_root_install("後端依賴 (pip install)")
+        return False
 
     dry = subprocess.run(
         [sys.executable, "-m", "pip", "install", "-r", req, "--dry-run", "-q"],
@@ -223,10 +280,6 @@ def install_backend() -> bool:
     if "would install" not in dry.stdout.lower():
         print("已就緒 ✓")
         return True
-    if _is_effective_root():
-        # Never run package install scripts as root — see _refuse_root_install.
-        _refuse_root_install("後端依賴 (pip install)")
-        return False
     print("安裝中...")
     result = subprocess.run(
         [sys.executable, "-m", "pip", "install", "-r", req, "-q"],

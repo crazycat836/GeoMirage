@@ -190,3 +190,45 @@ def test_frontend_deps_stale_under_root_is_refused(monkeypatch, tmp_path, capsys
     monkeypatch.setattr(start.subprocess, "run", lambda *a, **k: pytest.fail("no install"))
     assert start.install_frontend() is False
     assert "一般使用者" in capsys.readouterr().out
+
+
+# ── #135: no pip call at all when running as root ───────────────────────
+
+
+def _no_pip(*a, **k):
+    pytest.fail("pip must not run as root")
+
+
+def test_root_with_deps_installed_skips_pip(monkeypatch, tmp_path):
+    req = tmp_path / "requirements.txt"
+    req.write_text("pytest>=1.0\n# comment\n\n")
+    monkeypatch.setattr(start, "BACKEND", str(tmp_path))
+    monkeypatch.setattr(start, "_is_effective_root", lambda: True)
+    monkeypatch.setattr(start.subprocess, "run", _no_pip)
+    assert start.install_backend() is True
+
+
+def test_root_with_missing_dep_refuses_without_pip(monkeypatch, tmp_path, capsys):
+    req = tmp_path / "requirements.txt"
+    req.write_text("pytest>=1.0\ngeomirage-no-such-dist>=1.0\n")
+    monkeypatch.setattr(start, "BACKEND", str(tmp_path))
+    monkeypatch.setattr(start, "_is_effective_root", lambda: True)
+    monkeypatch.setattr(start.subprocess, "run", _no_pip)
+    assert start.install_backend() is False
+    assert "一般使用者" in capsys.readouterr().out
+
+
+def test_root_with_too_old_dep_refuses(monkeypatch, tmp_path):
+    req = tmp_path / "requirements.txt"
+    req.write_text("pytest>=999.0\n")
+    assert start._backend_requirements_met(str(req)) is False
+
+
+def test_non_root_still_uses_pip_dry_run(monkeypatch):
+    monkeypatch.setattr(start, "_is_effective_root", lambda: False)
+    calls = []
+    monkeypatch.setattr(
+        start.subprocess, "run", lambda argv, **kw: calls.append(argv) or _completed(0),
+    )
+    assert start.install_backend() is True
+    assert "--dry-run" in calls[0]
