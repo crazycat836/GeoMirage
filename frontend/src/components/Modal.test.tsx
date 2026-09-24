@@ -41,3 +41,23 @@ describe('Modal initial focus', () => {
     expect(document.activeElement).toBe(screen.getByRole('dialog'))
   })
 })
+
+describe('Modal accessible name', () => {
+  it('names the dialog from a JSX title without an explicit ariaLabel', () => {
+    render(
+      <Modal open onClose={vi.fn()} title={<span><svg aria-hidden="true" />Save route</span>}>
+        body
+      </Modal>,
+    )
+    expect(screen.getByRole('dialog', { name: 'Save route' })).toBeTruthy()
+  })
+
+  it('prefers an explicit ariaLabel over the title', () => {
+    render(
+      <Modal open onClose={vi.fn()} title="Visible" ariaLabel="Spoken">
+        body
+      </Modal>,
+    )
+    expect(screen.getByRole('dialog', { name: 'Spoken' })).toBeTruthy()
+  })
+})

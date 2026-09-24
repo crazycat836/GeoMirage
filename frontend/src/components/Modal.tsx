@@ -1,4 +1,4 @@
-import { useCallback, useRef, type ReactNode, type RefObject } from 'react'
+import { useCallback, useId, useRef, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { useFocusTrap } from '../hooks/useFocusTrap'
 import { useInitialFocus } from '../hooks/useInitialFocus'
@@ -23,7 +23,8 @@ export interface ModalProps {
   focusTrap?: boolean
   /** Blocks both backdrop dismiss and Escape — for in-flight async actions. */
   busy?: boolean
-  /** Optional accessible label; falls back to `title` when it's a string. */
+  /** Optional accessible label. Without it the dialog is named by its
+   *  rendered `title` (string or JSX) via `aria-labelledby`. */
   ariaLabel?: string
   /** Element id used for `aria-labelledby` (when caller renders its own h-tag). */
   ariaLabelledBy?: string
@@ -83,6 +84,7 @@ export default function Modal({
   dataFc,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null)
+  const titleId = useId()
 
   const handleBackdropClick = useCallback(() => {
     if (busy || !closeOnBackdropClick) return
@@ -101,8 +103,10 @@ export default function Modal({
 
   if (!open) return null
 
-  const resolvedAriaLabel =
-    ariaLabel ?? (typeof title === 'string' ? title : undefined)
+  // An explicit label wins; otherwise point at the rendered title so JSX
+  // titles (icon + text) still give the dialog an accessible name.
+  const resolvedLabelledBy =
+    ariaLabel != null ? undefined : ariaLabelledBy ?? (title != null ? titleId : undefined)
   const widthPx = SIZE_WIDTH_PX[size]
   const mergedStyle: React.CSSProperties = { width: widthPx, ...dialogStyle }
   const mergedDialogClass = dialogClassName
@@ -120,14 +124,14 @@ export default function Modal({
         role={role}
         aria-modal="true"
         tabIndex={-1}
-        aria-label={resolvedAriaLabel}
-        aria-labelledby={ariaLabelledBy}
+        aria-label={ariaLabel}
+        aria-labelledby={resolvedLabelledBy}
         aria-describedby={ariaDescribedBy}
         className={mergedDialogClass}
         style={mergedStyle}
         onClick={(e) => e.stopPropagation()}
       >
-        {title != null && <div className="modal-title">{title}</div>}
+        {title != null && <div id={titleId} className="modal-title">{title}</div>}
         {children}
         {actions != null && <div className="modal-actions">{actions}</div>}
       </div>
