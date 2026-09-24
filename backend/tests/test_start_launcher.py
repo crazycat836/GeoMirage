@@ -147,3 +147,46 @@ def test_wait_for_port_fails_fast_when_process_exits(monkeypatch):
     monkeypatch.setattr(start, "is_port_open", lambda port: False)
     monkeypatch.setattr(start.time, "sleep", lambda s: pytest.fail("should not wait"))
     assert start.wait_for_port(1, "後端", proc=proc) is False
+
+
+# ── #98: reinstall frontend deps when package-lock.json changes ─────────
+
+
+def _frontend_tree(tmp_path, lock_mtime, hidden_mtime=None):
+    nm = tmp_path / "node_modules"
+    nm.mkdir()
+    lock = tmp_path / "package-lock.json"
+    lock.write_text("{}")
+    os.utime(lock, (lock_mtime, lock_mtime))
+    if hidden_mtime is not None:
+        hidden = nm / ".package-lock.json"
+        hidden.write_text("{}")
+        os.utime(hidden, (hidden_mtime, hidden_mtime))
+    return tmp_path
+
+
+def test_frontend_deps_fresh_when_lock_unchanged(monkeypatch, tmp_path):
+    monkeypatch.setattr(start, "FRONTEND", str(_frontend_tree(tmp_path, 1000, 1000)))
+    monkeypatch.setattr(start.subprocess, "run", lambda *a, **k: pytest.fail("no install"))
+    assert start.install_frontend() is True
+
+
+def test_frontend_deps_reinstalled_when_lock_newer(monkeypatch, tmp_path):
+    monkeypatch.setattr(start, "FRONTEND", str(_frontend_tree(tmp_path, 5000, 1000)))
+    monkeypatch.setattr(start, "_is_effective_root", lambda: False)
+    calls = []
+    monkeypatch.setattr(
+        start.subprocess, "run", lambda argv, **kw: calls.append(argv) or _completed(0),
+    )
+    assert start.install_frontend() is True
+    assert calls == [["npm", "install"]]
+    # The stamp written after a good install makes the next run a no-op.
+    assert start._frontend_deps_stale() is False
+
+
+def test_frontend_deps_stale_under_root_is_refused(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(start, "FRONTEND", str(_frontend_tree(tmp_path, 5000, 1000)))
+    monkeypatch.setattr(start, "_is_effective_root", lambda: True)
+    monkeypatch.setattr(start.subprocess, "run", lambda *a, **k: pytest.fail("no install"))
+    assert start.install_frontend() is False
+    assert "一般使用者" in capsys.readouterr().out

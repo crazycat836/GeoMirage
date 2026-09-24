@@ -239,11 +239,46 @@ def install_backend() -> bool:
     return True
 
 
+# Written into node_modules after a successful `npm install`. Its mtime
+# (or that of npm's own hidden lockfile) must not be older than
+# package-lock.json; a newer lock means a pull or dependency bump since
+# the last install.
+_INSTALL_STAMP = ".geomirage-install-stamp"
+# Filesystem / checkout mtime jitter; npm writes both lockfiles within
+# the same install, so a small gap isn't a real change.
+_LOCK_MTIME_SLACK_S = 2.0
+
+
+def _frontend_deps_stale() -> bool:
+    """True when node_modules is missing or older than package-lock.json."""
+    nm = os.path.join(FRONTEND, "node_modules")
+    if not os.path.isdir(nm):
+        return True
+    try:
+        lock_mtime = os.path.getmtime(os.path.join(FRONTEND, "package-lock.json"))
+    except OSError:
+        return False  # no lockfile to compare against
+    installed = 0.0
+    for marker in (".package-lock.json", _INSTALL_STAMP):
+        try:
+            installed = max(installed, os.path.getmtime(os.path.join(nm, marker)))
+        except OSError:
+            pass
+    return lock_mtime > installed + _LOCK_MTIME_SLACK_S
+
+
+def _mark_frontend_installed() -> None:
+    try:
+        with open(os.path.join(FRONTEND, "node_modules", _INSTALL_STAMP), "w"):
+            pass
+    except OSError:
+        pass
+
+
 def install_frontend() -> bool:
     """Ensure frontend deps are installed. Returns False when blocked or failed."""
     print("  [2/4] 檢查前端依賴...", end=" ", flush=True)
-    nm = os.path.join(FRONTEND, "node_modules")
-    if os.path.isdir(nm):
+    if not _frontend_deps_stale():
         print("已就緒 ✓")
         return True
     if _is_effective_root():
@@ -255,6 +290,7 @@ def install_frontend() -> bool:
     if result.returncode != 0:
         _report_failure("npm install", result)
         return False
+    _mark_frontend_installed()
     print("        完成 ✓")
     return True
 
