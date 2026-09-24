@@ -139,3 +139,112 @@ def test_start_and_connect_proceeds_for_a_different_udid():
     with pytest.raises(HTTPException) as excinfo:
         asyncio.run(_run())
     assert excinfo.value.detail["code"] == "tunnel_no_rsd"
+
+
+# ─── One WiFi tunnel at a time ───────────────────────────────────────
+
+
+class _RunningTunnel:
+    """A tunnel already up for device A at 192.168.2.10."""
+
+    def __init__(self) -> None:
+        self.lock = asyncio.Lock()
+        self.info = {
+            "rsd_address": "fd00::1", "rsd_port": 5555,
+            "ip": "192.168.2.10",
+        }
+        self.start = AsyncMock(side_effect=AssertionError("must not restart"))
+
+    def is_running(self) -> bool:
+        return True
+
+
+def _start_and_connect_with_running_tunnel(req):
+    from api.tunnel import lifecycle
+
+    dm = _FakeDeviceManager(["UDID-A"])
+
+    async def _run():
+        with (
+            patch.object(lifecycle, "get_device_manager", return_value=dm),
+            patch.object(lifecycle, "get_tunnel_runner", return_value=_RunningTunnel()),
+            patch.object(
+                lifecycle.connection_state.store, "metadata_for",
+                return_value={"name": "A", "ios_version": "27.0"},
+            ),
+        ):
+            return await lifecycle.wifi_tunnel_start_and_connect(req)
+
+    return asyncio.run(_run())
+
+
+def test_start_and_connect_different_ip_is_tunnel_busy():
+    """Tunnel already serves A; asking for B's IP must not report A as
+    'already_connected'."""
+    from api.tunnel import lifecycle
+
+    req = lifecycle.WifiTunnelStartRequest(ip="192.168.2.20", port=49152)
+    with pytest.raises(HTTPException) as excinfo:
+        _start_and_connect_with_running_tunnel(req)
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.detail["code"] == "tunnel_busy"
+
+
+def test_start_and_connect_same_ip_still_already_connected():
+    from api.tunnel import lifecycle
+
+    req = lifecycle.WifiTunnelStartRequest(ip="192.168.2.10", port=49152)
+    res = _start_and_connect_with_running_tunnel(req)
+    assert res["status"] == "already_connected"
+    assert res["udid"] == "UDID-A"
+
+
+def test_tunnel_start_for_other_device_is_tunnel_busy():
+    """Direct API call for device B while A's tunnel runs must not hand
+    back A's RSD."""
+    from api.tunnel import lifecycle
+
+    req = lifecycle.WifiTunnelStartRequest(
+        ip="192.168.2.20", port=49152, udid="UDID-B",
+    )
+
+    async def _run():
+        with patch.object(lifecycle, "get_tunnel_runner", return_value=_RunningTunnel()):
+            await lifecycle._do_tunnel_start(req)
+
+    with pytest.raises(HTTPException) as excinfo:
+        asyncio.run(_run())
+    assert excinfo.value.detail["code"] == "tunnel_busy"
+
+
+def test_tunnel_runner_records_target_ip(monkeypatch):
+    """``_tunnel_busy_error`` keys on ``info['ip']``; the runner must set it."""
+    import contextlib
+
+    import pymobiledevice3.remote.tunnel_service as ts
+    from core.wifi_tunnel import TunnelRunner
+
+    class _Service:
+        remote_identifier = "UDID-A"
+
+        @contextlib.asynccontextmanager
+        async def start_tcp_tunnel(self):
+            yield type("T", (), {
+                "address": "fd00::1", "port": 5555,
+                "interface": "utun9", "protocol": "tcp",
+            })()
+
+    async def _create(_udid, _ip, _port):
+        return _Service()
+
+    monkeypatch.setattr(ts, "create_core_device_tunnel_service_using_remotepairing", _create)
+
+    async def _run():
+        runner = TunnelRunner()
+        info = await runner.start("auto", "192.168.2.10", 49152, timeout=2.0)
+        await runner.stop()
+        return info
+
+    info = asyncio.run(_run())
+    assert info["ip"] == "192.168.2.10"
+    assert info["rsd_address"] == "fd00::1"

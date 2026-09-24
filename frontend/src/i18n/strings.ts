@@ -241,6 +241,7 @@ export const STRINGS = {
   'err.tunnel_pair_rejected': { zh: 'iPhone 拒絕配對驗證,請確認 iPhone 與電腦在同一 WiFi,或點「修復」用 USB 重新配對後再試', en: 'The iPhone rejected pairing verification — make sure it is on the same Wi-Fi as this computer, or tap Repair to re-pair via USB and retry' },
   'err.tunnel_exited': { zh: 'Tunnel 進程異常結束', en: 'Tunnel process exited unexpectedly' },
   'err.tunnel_timeout': { zh: 'Tunnel 啟動逾時,請確認 iPhone 解鎖且與電腦同網段', en: 'Tunnel startup timed out, ensure iPhone is unlocked and on the same subnet' },
+  'err.tunnel_busy': { zh: '目前只支援一台 Wi-Fi 裝置，請先中斷目前的 Wi-Fi 連線', en: 'Only one Wi-Fi device is supported at a time; disconnect the current Wi-Fi device first' },
   'err.no_device': { zh: '尚未連接任何 iOS 裝置,請先透過 USB 連線', en: 'No iOS device connected, connect via USB first' },
   'err.no_position': { zh: '尚未取得目前位置,請先跳點到一個座標', en: 'No current position, teleport to a coordinate first' },
   'err.tunnel_lost': { zh: 'WiFi Tunnel 連線中斷,請重新建立', en: 'Wi-Fi tunnel dropped, please reconnect' },

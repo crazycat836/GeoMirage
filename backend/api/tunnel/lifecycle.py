@@ -161,12 +161,36 @@ async def _start_with_port_recovery(tunnel, udid: str, ip: str, port: int) -> di
         raise first_exc
 
 
+def _tunnel_busy_error(tunnel, ip: str):
+    """Return a 409 ``tunnel_busy`` error when the running tunnel serves
+    a different IP than *ip*, else None.
+
+    The WiFi tunnel is a process-wide singleton, so a request for a
+    second device must fail loudly rather than be answered with the
+    first device's tunnel. Compared by IP: the tunnel's udid argument
+    may be a pre-resolved guess, not the device it reached.
+    """
+    if not tunnel.is_running() or not tunnel.info:
+        return None
+    current_ip = tunnel.info.get("ip")
+    if current_ip and ip != current_ip:
+        return http_err(
+            409, ErrorCode.TUNNEL_BUSY,
+            "Only one WiFi device is supported at a time; disconnect the "
+            "current WiFi device first",
+        )
+    return None
+
+
 async def _do_tunnel_start(req: WifiTunnelStartRequest) -> dict:
     """Start an in-process WiFi tunnel (requires admin). Used by the
     /wifi/tunnel/start-and-connect route."""
     tunnel = get_tunnel_runner()
     async with tunnel.lock:
         if tunnel.is_running():
+            busy = _tunnel_busy_error(tunnel, req.ip)
+            if busy is not None:
+                raise busy
             if tunnel.info:
                 return {"status": "already_running", **tunnel.info}
             return {"status": "already_running"}
@@ -318,6 +342,9 @@ async def wifi_tunnel_start_and_connect(req: WifiTunnelStartRequest):
     # live connection, or times out against a phone that is already busy.
     # Without an explicit udid we can't map the requested IP to a device,
     # so any live Network device counts as "this is the one you meant".
+    busy = _tunnel_busy_error(get_tunnel_runner(), req.ip)
+    if busy is not None:
+        raise busy
     network_udids = get_device_manager().udids_by_connection_type("Network")
     if network_udids and (req.udid is None or req.udid in network_udids):
         udid = req.udid or network_udids[0]

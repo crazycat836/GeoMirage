@@ -156,6 +156,10 @@ class TunnelRunner:
                     "rsd_port": tunnel.port,
                     "interface": tunnel.interface,
                     "protocol": str(tunnel.protocol),
+                    # Which device this tunnel serves, so a start request
+                    # for another IP can be refused instead of being
+                    # answered with this tunnel's RSD.
+                    "ip": ip,
                 }
                 logger.info(
                     "WiFi tunnel established: %s:%d iface=%s",

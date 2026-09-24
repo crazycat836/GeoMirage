@@ -69,6 +69,7 @@ class ErrorCode(StrEnum):
     TUNNEL_SPAWN_FAILED = "tunnel_spawn_failed"
     TUNNEL_PAIR_REJECTED = "tunnel_pair_rejected"
     TUNNEL_TIMEOUT = "tunnel_timeout"
+    TUNNEL_BUSY = "tunnel_busy"
     SCAN_FAILED = "scan_failed"
 
     # Movement / location
