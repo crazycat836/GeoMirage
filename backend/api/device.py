@@ -212,8 +212,10 @@ async def amfi_reveal_developer_mode(udid: str):
         logger.exception("pymobiledevice3 AMFI module import failed", extra={"udid": udid})
         raise http_err(500, ErrorCode.AMFI_UNAVAILABLE, "pymobiledevice3 AMFI service failed to load")
 
+    # On iOS 17+ ``conn.lockdown`` is the RSD; the AMFI lockdown service
+    # is only reachable through the usbmux lockdown kept alongside it.
     try:
-        AmfiService(conn.lockdown).reveal_developer_mode_option_in_ui()
+        await AmfiService(conn.usbmux_lockdown or conn.lockdown).reveal_developer_mode_option_in_ui()
     except Exception:
         logger.exception("AMFI reveal failed for %s", udid)
         raise http_err(500, ErrorCode.AMFI_REVEAL_FAILED, "AMFI operation failed; ensure the device is unlocked and trusts this computer")
