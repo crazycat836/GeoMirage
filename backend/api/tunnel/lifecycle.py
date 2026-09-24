@@ -21,10 +21,10 @@ from config import MAX_DEVICES, REMOTE_PAIRING_PORT
 from services import connection_state
 from services.wifi_discovery import discover_remotepairing_ports
 from services.wifi_tunnel_service import (
-    cancel_watchdog,
     cleanup_wifi_connections,
     get_watchdog,
     set_watchdog,
+    teardown_wifi_tunnel,
 )
 
 logger = logging.getLogger(__name__)
@@ -303,24 +303,16 @@ async def wifi_tunnel_stop():
     tunnel = get_tunnel_runner()
 
     async with tunnel.lock:
-        # Always disconnect Network devices first — even when the tunnel
-        # isn't running we may still hold stale Network entries.
-        await cleanup_wifi_connections()
-
         if not tunnel.is_running():
+            # We may still hold stale tunnel device entries.
+            await cleanup_wifi_connections()
             tunnel.info = None
             tunnel.task = None
             return {"status": "not_running"}
 
-        # Order matters: cancel the watchdog *before* tearing down the
-        # tunnel so it can't race on our cleanup; then close the tunnel
-        # task itself (TunnelRunner.stop encapsulates cancel + await +
-        # service/RSD/tunnel-ctx close).
-        shutdown_steps: list[TeardownStep] = [
-            TeardownStep("cancel_watchdog", cancel_watchdog),
-            TeardownStep("tunnel_stop", tunnel.stop),
-        ]
-        await run_teardown_steps(shutdown_steps)
+        # Devices first (engine → transport), then the watchdog, then the
+        # tunnel task itself — the same teardown the liveness loop runs.
+        await teardown_wifi_tunnel(reason="wifi_tunnel_stopped")
 
     # USB fallback runs outside the tunnel lock — it acquires its own
     # device-manager locks and we don't want to hold tunnel.lock across

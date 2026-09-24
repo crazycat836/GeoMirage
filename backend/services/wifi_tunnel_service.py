@@ -159,6 +159,25 @@ async def cleanup_wifi_connections(reason: str = "wifi_tunnel_stopped") -> list[
     return udids
 
 
+async def teardown_wifi_tunnel(*, reason: str) -> list[str]:
+    """Disconnect the tunnel's devices (engine first), cancel the tunnel
+    watchdog, then stop the tunnel. Returns the disconnected UDIDs.
+
+    Shared by ``/wifi/tunnel/stop`` and the liveness loop. The caller
+    must hold ``tunnel.lock`` so a stop/start in between can't have
+    this stop a newer tunnel. The watchdog is cancelled before the stop
+    so it doesn't treat the stop as an unexpected exit and broadcast a
+    late ``tunnel_degraded`` / second cleanup.
+    """
+    udids = await cleanup_wifi_connections(reason=reason)
+    cancel_watchdog()
+    try:
+        await tunnel.stop()
+    except Exception:
+        logger.exception("tunnel.stop failed (reason=%s)", reason)
+    return udids
+
+
 def live_tunnel_rsd() -> tuple[str, int] | None:
     """The running tunnel's RSD ``(address, port)``, or None when no
     tunnel is up or its transport has died."""

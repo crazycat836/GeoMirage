@@ -47,10 +47,11 @@ async def tunnel_liveness_loop(stop: asyncio.Event, app_state=None) -> None:
     """
     from services.wifi_tunnel_service import (
         _tcp_probe,
-        cleanup_wifi_connections,
+        teardown_wifi_tunnel,
         tunnel,
         tunnel_udids,
     )
+    from services.ws_broadcaster import broadcast
 
     if app_state is None:
         from context import ctx
@@ -144,7 +145,9 @@ async def tunnel_liveness_loop(stop: asyncio.Event, app_state=None) -> None:
             # generation we probed is still current. A user-driven
             # stop()/start() cycle inside the probe window bumps generation;
             # in that case the new tunnel owns its own future and we must
-            # not tear it down based on the old tunnel's misses.
+            # not tear it down based on the old tunnel's misses. The
+            # teardown stays inside the lock so a stop/start can't slip in
+            # between the check and tunnel.stop().
             async with tunnel.lock:
                 if tunnel.generation != gen:
                     logger.info(
@@ -154,20 +157,27 @@ async def tunnel_liveness_loop(stop: asyncio.Event, app_state=None) -> None:
                     )
                     miss_count = 0
                     continue
+                if not tunnel.is_running():
+                    # The tunnel task exited meanwhile; _tunnel_watchdog
+                    # owns that cleanup and its tunnel_lost event.
+                    miss_count = 0
+                    continue
 
-            logger.error(
-                "Tunnel unreachable for ~%.0fs — declaring dead, cleaning up",
-                PROBE_INTERVAL_S * MISS_THRESHOLD,
-            )
-            try:
-                await cleanup_wifi_connections(reason="tunnel_lost_liveness")
-            except Exception:
-                logger.exception("Liveness cleanup failed")
-            try:
-                await tunnel.stop()
-            except Exception:
-                logger.exception("Liveness tunnel.stop failed")
+                logger.error(
+                    "Tunnel unreachable for ~%.0fs — declaring dead, cleaning up",
+                    PROBE_INTERVAL_S * MISS_THRESHOLD,
+                )
+                try:
+                    await teardown_wifi_tunnel(reason="tunnel_lost_liveness")
+                except Exception:
+                    logger.exception("Liveness teardown failed")
             miss_count = 0
+            # The tunnel watchdog was cancelled above, so this is the one
+            # tunnel event the renderer gets for this loss.
+            try:
+                await broadcast("tunnel_lost", {"reason": "liveness"})
+            except Exception:
+                logger.exception("Failed to emit tunnel_lost event")
     except asyncio.CancelledError:
         raise
     except Exception:

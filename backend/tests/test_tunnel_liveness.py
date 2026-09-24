@@ -275,3 +275,76 @@ def test_generation_change_aborts_cleanup(monkeypatch):
 
     cleanup.assert_not_awaited()
     tunnel.stop.assert_not_awaited()
+
+
+def _stoppable_tunnel(order: list[str]):
+    """Fake tunnel whose stop() really stops it and records the
+    generation it stopped."""
+    state = {"running": True}
+
+    async def _stop():
+        order.append(f"stop:gen{tunnel.generation}")
+        state["running"] = False
+
+    tunnel = SimpleNamespace(
+        lock=asyncio.Lock(),
+        is_running=lambda: state["running"],
+        info={"rsd_address": "127.0.0.1", "rsd_port": 49152},
+        generation=1,
+        stop=_stop,
+        transport_alive=lambda: False,  # escalate on the first iteration
+    )
+    return tunnel
+
+
+def test_restart_during_cleanup_is_not_stopped(monkeypatch):
+    """A user stop+start that lands while liveness is cleaning up must
+    wait for the teardown, so tunnel.stop() only ever hits the dead
+    generation, never the new tunnel."""
+    order: list[str] = []
+    tunnel = _stoppable_tunnel(order)
+    cleanup, _ = _patch_loop_deps(
+        monkeypatch, tunnel=tunnel, network_udids=["udid-A"],
+        probe_results=[True],
+    )
+    from services import wifi_tunnel_service as wt
+    monkeypatch.setattr(wt, "cancel_watchdog", lambda: None)
+
+    async def _user_restart():
+        async with tunnel.lock:
+            tunnel.generation += 1
+            order.append(f"restart:gen{tunnel.generation}")
+
+    async def _slow_cleanup(**_kw):
+        asyncio.get_running_loop().create_task(_user_restart())
+        await asyncio.sleep(0.02)  # cleanup takes a while
+        return ["udid-A"]
+    cleanup.side_effect = _slow_cleanup
+
+    asyncio.run(_run_for(0.15))
+
+    assert order[:2] == ["stop:gen1", "restart:gen2"], order
+    assert "stop:gen2" not in order
+
+
+def test_liveness_teardown_emits_one_tunnel_event(monkeypatch):
+    """The watchdog is cancelled before the tunnel stops, and the loop
+    emits a single tunnel_lost after the devices are disconnected."""
+    order: list[str] = []
+    tunnel = _stoppable_tunnel(order)
+    cleanup, _ = _patch_loop_deps(
+        monkeypatch, tunnel=tunnel, network_udids=["udid-A"],
+        probe_results=[True],
+    )
+    cleanup.side_effect = lambda **_kw: order.append("cleanup") or ["udid-A"]
+    from services import wifi_tunnel_service as wt
+    from services import ws_broadcaster
+    monkeypatch.setattr(wt, "cancel_watchdog", lambda: order.append("cancel_watchdog"))
+
+    async def _broadcast(event, data):
+        order.append(event)
+    monkeypatch.setattr(ws_broadcaster, "broadcast", _broadcast)
+
+    asyncio.run(_run_for(0.15))
+
+    assert order == ["cleanup", "cancel_watchdog", "stop:gen1", "tunnel_lost"], order
