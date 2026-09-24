@@ -1,19 +1,16 @@
 import { useEffect, useRef, type RefObject } from 'react';
 import L from 'leaflet';
 import { ACCENT_HEX } from '../../lib/constants';
-import { coordKey } from '../../lib/format';
 import type { Position } from './types';
-
-function pathSig(path: Position[]): string {
-  if (path.length === 0) return '';
-  const first = path[0];
-  const last = path[path.length - 1];
-  return `${path.length}:${coordKey(first)}:${coordKey(last)}`;
-}
 
 /**
  * Owns the dual-layer route polyline lifecycle: a wide faint glow plus a
  * thin dashed accent line with a CSS `route-line-flow` animation.
+ *
+ * Redraws on every new `routePath` array. The runtime keeps the same array
+ * reference across position ticks, so a new reference means a new route
+ * (re-sent, re-planned, or a different primary device); comparing only
+ * length / start / end would miss routes that differ mid-way.
  *
  * ACCENT_HEX mirrors `--color-accent`; Leaflet writes it to an SVG
  * `stroke` attribute which doesn't resolve CSS vars.
@@ -24,28 +21,24 @@ export function useRoutePolyline(
 ): void {
   const glowRef = useRef<L.Polyline | null>(null);
   const overlayRef = useRef<L.Polyline | null>(null);
-  const sigRef = useRef<string>('');
+
+  const removeLines = () => {
+    glowRef.current?.remove();
+    overlayRef.current?.remove();
+    glowRef.current = null;
+    overlayRef.current = null;
+  };
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    const sig = pathSig(routePath);
-    if (sig === sigRef.current) return;
-    sigRef.current = sig;
-
-    const visible = routePath.length > 1;
-    const latlngs: L.LatLngExpression[] = visible
-      ? routePath.map((p) => [p.lat, p.lng])
-      : [];
-
-    if (!visible) {
-      glowRef.current?.remove();
-      overlayRef.current?.remove();
-      glowRef.current = null;
-      overlayRef.current = null;
+    if (routePath.length <= 1) {
+      removeLines();
       return;
     }
+
+    const latlngs: L.LatLngExpression[] = routePath.map((p) => [p.lat, p.lng]);
 
     if (glowRef.current && overlayRef.current) {
       glowRef.current.setLatLngs(latlngs);
@@ -70,12 +63,8 @@ export function useRoutePolyline(
       className: 'route-line-flow',
       interactive: false,
     }).addTo(map);
-
-    return () => {
-      glowRef.current?.remove();
-      overlayRef.current?.remove();
-      glowRef.current = null;
-      overlayRef.current = null;
-    };
   }, [mapRef, routePath]);
+
+  // Remove the lines only when the owning map unmounts.
+  useEffect(() => removeLines, []);
 }
