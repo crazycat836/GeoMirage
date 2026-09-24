@@ -2,6 +2,8 @@ import asyncio
 import logging
 import os
 import secrets
+import stat
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -53,6 +55,38 @@ for _old_data_dir in (Path.home() / ".gpscontroller", Path.home() / ".locwarp"):
             _old_data_dir, _new_data_dir, exc,
         )
 
+def _unsafe_data_dir_reason(path: Path) -> str | None:
+    """Why a root backend must not write into *path*, or None if it may.
+
+    Running as root, every file under the data dir is written with root
+    rights. If a same-user process swapped the directory for a symlink
+    (say, to a system directory) or it belongs to some other account,
+    those writes and chowns would land outside the user's own files, so
+    startup is refused instead. Non-root runs are never refused.
+    """
+    if not hasattr(os, "geteuid") or os.geteuid() != 0:
+        return None
+    try:
+        st = os.lstat(path)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        return f"cannot be inspected ({exc})"
+    if stat.S_ISLNK(st.st_mode):
+        return "is a symlink"
+    sudo_uid = os.environ.get("SUDO_UID", "")
+    if sudo_uid.isdigit() and st.st_uid not in (0, int(sudo_uid)):
+        return f"is owned by uid {st.st_uid}, not the invoking user"
+    return None
+
+
+_data_dir_problem = _unsafe_data_dir_reason(_new_data_dir)
+if _data_dir_problem is not None:
+    sys.stderr.write(
+        f"GeoMirage: refusing to start as root: {_new_data_dir} {_data_dir_problem}\n",
+    )
+    raise SystemExit(1)
+
 # Logging setup (formatters, rotating file handler, uvicorn access filter)
 # lives in `logging_config.py` so this entrypoint stays focused on app
 # wiring. Returns the canonical "geomirage" logger.
@@ -65,51 +99,35 @@ logger = setup_logging(_new_data_dir / "logs")
 # (re)assigned on `auth` during lifespan and read late-bound everywhere.
 
 
-def _open_and_write_token(token: str) -> None:
-    """Single 0600-atomic write attempt for the session token file.
-
-    Using ``Path.write_text`` followed by ``os.chmod`` opens a race window
-    where the token sits at the default umask (typically 0o644) and is
-    world-readable for the duration of the chmod. ``os.open`` with the
-    mode supplied up-front lets the kernel apply 0o600 atomically before
-    any data lands. Windows ignores the mode bits and relies on user-
-    profile ACLs to keep the file private.
-    """
-    fd = os.open(
-        str(TOKEN_FILE),
-        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
-        0o600,
-    )
-    try:
-        os.write(fd, token.encode("utf-8"))
-    finally:
-        os.close(fd)
-
-
 def _write_token_file(token: str) -> None:
     """Write the session token to ~/.geomirage/token with mode 0600.
 
-    Recovers from a stale root-owned token: a previous `sudo python3
-    start.py` run could leave the file owned by root, so the next
-    unprivileged run gets EACCES on open. The directory itself is owned
-    by the user, so unlink-and-rewrite succeeds where the in-place
-    truncate cannot — without this the user is locked out until they
-    delete the file by hand.
+    The token goes to a fresh sibling temp file opened with
+    ``O_CREAT | O_EXCL | O_NOFOLLOW`` and mode 0600 (so it is never
+    readable at the default umask, and a planted symlink can't redirect
+    the write), then ``os.replace``s the real entry. Replacing the entry
+    also recovers from a stale root-owned token left by an earlier
+    privileged run: the directory is the user's, so the rename succeeds
+    where truncating the old file in place would get EACCES.
 
-    After a successful write, ``chown_back`` hands ownership back to the
-    invoking user when running under sudo (same sudo-drop every other
-    persisted file gets via ``safe_write_json``), so the renderer can
-    read the token and the NEXT non-sudo run can rewrite it.
+    ``chown_back`` then hands ownership to the invoking user when
+    running under sudo, so the renderer can read the token and the next
+    non-sudo run can rewrite it. Windows ignores the mode bits and
+    relies on user-profile ACLs.
     """
+    tmp = TOKEN_FILE.with_name(f"{TOKEN_FILE.name}.{secrets.token_hex(8)}.tmp")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(str(tmp), flags, 0o600)
     try:
-        _open_and_write_token(token)
-    except PermissionError:
-        logger.warning(
-            "Token file %s is not writable (stale root-owned file from a "
-            "previous sudo run?) — removing and rewriting", TOKEN_FILE,
-        )
-        TOKEN_FILE.unlink(missing_ok=True)
-        _open_and_write_token(token)
+        try:
+            os.write(fd, token.encode("utf-8"))
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.replace(tmp, TOKEN_FILE)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
     chown_back(TOKEN_FILE)
 
 
