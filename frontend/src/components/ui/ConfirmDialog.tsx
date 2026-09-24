@@ -1,8 +1,5 @@
 import React, { useCallback, useId, useRef } from 'react'
-import { createPortal } from 'react-dom'
-import { useModalDismiss } from '../../hooks/useModalDismiss'
-import { useFocusTrap } from '../../hooks/useFocusTrap'
-import { useInitialFocus } from '../../hooks/useInitialFocus'
+import Modal from '../Modal'
 
 interface ConfirmDialogProps {
   open: boolean
@@ -19,7 +16,7 @@ interface ConfirmDialogProps {
 }
 
 // Accessible replacement for window.confirm().
-// Uses the existing .modal-* CSS classes, adds ARIA roles + focus trap.
+// Built on the shared Modal (Esc, focus trap, initial focus, focus restore).
 export default function ConfirmDialog({
   open,
   title,
@@ -34,41 +31,25 @@ export default function ConfirmDialog({
   const descId = useId()
   const confirmRef = useRef<HTMLButtonElement>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
-  const dialogRef = useRef<HTMLDivElement>(null)
-
-  useModalDismiss({ open, onDismiss: onCancel, busy })
-  useFocusTrap(dialogRef, open)
-
-  // Danger dialogs focus Cancel so a reflexive Enter can't trigger the
-  // destructive action; the default tone keeps Confirm as the target.
-  useInitialFocus(open, dialogRef, tone === 'danger' ? cancelRef : confirmRef)
 
   const handleConfirm = useCallback(() => {
     void onConfirm()
   }, [onConfirm])
 
-  if (!open) return null
-
-  return createPortal(
-    <div
-      data-fc="modal.confirm"
-      className="modal-overlay anim-fade-in"
-      onClick={() => { if (!busy) onCancel() }}
-      role="presentation"
-    >
-      <div
-        ref={dialogRef}
-        className="modal-dialog anim-scale-in"
-        role="alertdialog"
-        aria-modal="true"
-        aria-describedby={description ? descId : undefined}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="modal-title">{title}</div>
-        {description != null && (
-          <div className="modal-body" id={descId}>{description}</div>
-        )}
-        <div className="modal-actions">
+  return (
+    <Modal
+      open={open}
+      onClose={onCancel}
+      busy={busy}
+      role="alertdialog"
+      title={title}
+      ariaDescribedBy={description != null ? descId : undefined}
+      // Danger dialogs focus Cancel so a reflexive Enter can't trigger the
+      // destructive action; the default tone keeps Confirm as the target.
+      initialFocusRef={tone === 'danger' ? cancelRef : confirmRef}
+      dataFc="modal.confirm"
+      actions={
+        <>
           <button
             ref={cancelRef}
             type="button"
@@ -87,9 +68,12 @@ export default function ConfirmDialog({
           >
             {confirmLabel}
           </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
+        </>
+      }
+    >
+      {description != null && (
+        <div className="modal-body" id={descId}>{description}</div>
+      )}
+    </Modal>
   )
 }

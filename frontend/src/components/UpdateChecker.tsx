@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
 import pkg from '../../package.json';
 import { useT } from '../i18n';
 import { STORAGE_KEYS } from '../lib/storage-keys';
 import { readJSON, writeJSON } from '../lib/local-storage';
 import { openExternalOrDefault } from '../lib/open-external';
+import Modal from './Modal';
 
 const CURRENT = pkg.version;
 const REPO = 'crazycat836/GeoMirage';
@@ -134,57 +134,28 @@ export default function UpdateChecker() {
     setLatest(null);
   };
 
-  return createPortal(
-    <div
-      className="modal-overlay anim-fade-in"
-      onClick={dismiss}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="modal-dialog anim-scale-in"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="update-checker-title"
-      >
-        <div className="flex items-center gap-2.5 mb-3.5">
-          <div
+  return (
+    <Modal
+      open
+      onClose={dismiss}
+      ariaLabel={t('update.title')}
+      title={
+        <span className="flex items-center gap-2.5">
+          <span
             className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
             style={{ background: 'linear-gradient(135deg, var(--color-accent), var(--color-device-a))' }}
+            aria-hidden="true"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
               <path d="M12 2v13M5 9l7-7 7 7" />
               <path d="M5 21h14" />
             </svg>
-          </div>
-          <h2 id="update-checker-title" className="modal-title">
-            {t('update.title')}
-          </h2>
-        </div>
-
-        <div className="modal-body">
-          <div className="flex justify-between">
-            <span className="opacity-65">{t('update.current')}</span>
-            <span className="font-mono">v{CURRENT}</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="opacity-65">{t('update.latest')}</span>
-            <a
-              href={RELEASES_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="font-mono text-[var(--color-accent)] font-semibold no-underline"
-              onClick={(e) => openExternalOrDefault(RELEASES_URL, e)}
-            >
-              {latest} ↗
-            </a>
-          </div>
-        </div>
-
-        <p className="text-xs text-[var(--color-text-1)] opacity-75 mb-4 leading-relaxed">
-          {t('update.go_to_github')}
-        </p>
-
-        <div className="modal-actions">
+          </span>
+          {t('update.title')}
+        </span>
+      }
+      actions={
+        <>
           <a
             href={RELEASES_URL}
             target="_blank"
@@ -197,9 +168,31 @@ export default function UpdateChecker() {
           <button type="button" className="action-btn" onClick={dismiss}>
             {t('update.later')}
           </button>
+        </>
+      }
+    >
+      <div className="modal-body">
+        <div className="flex justify-between">
+          <span className="opacity-65">{t('update.current')}</span>
+          <span className="font-mono">v{CURRENT}</span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="opacity-65">{t('update.latest')}</span>
+          <a
+            href={RELEASES_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="font-mono text-[var(--color-accent)] font-semibold no-underline"
+            onClick={(e) => openExternalOrDefault(RELEASES_URL, e)}
+          >
+            {latest} ↗
+          </a>
         </div>
       </div>
-    </div>,
-    document.body,
+
+      <p className="text-xs text-[var(--color-text-1)] opacity-75 mb-4 leading-relaxed">
+        {t('update.go_to_github')}
+      </p>
+    </Modal>
   );
 }

@@ -1,4 +1,4 @@
-import { useCallback, useRef, type ReactNode } from 'react'
+import { useCallback, useRef, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { useFocusTrap } from '../hooks/useFocusTrap'
 import { useInitialFocus } from '../hooks/useInitialFocus'
@@ -27,6 +27,12 @@ export interface ModalProps {
   ariaLabel?: string
   /** Element id used for `aria-labelledby` (when caller renders its own h-tag). */
   ariaLabelledBy?: string
+  /** Element id used for `aria-describedby`. */
+  ariaDescribedBy?: string
+  /** Default `dialog`. Use `alertdialog` for confirm prompts. */
+  role?: 'dialog' | 'alertdialog'
+  /** Element to focus on open; defaults to the first focusable descendant. */
+  initialFocusRef?: RefObject<HTMLElement | null>
   /** Extra class names appended to the dialog; lets callers tune width or surface. */
   dialogClassName?: string
   /** Replaces the default `.modal-dialog` surface class. Use when a caller
@@ -68,6 +74,9 @@ export default function Modal({
   busy = false,
   ariaLabel,
   ariaLabelledBy,
+  ariaDescribedBy,
+  role = 'dialog',
+  initialFocusRef,
   dialogClassName,
   surfaceClass = 'modal-dialog',
   dialogStyle,
@@ -88,7 +97,7 @@ export default function Modal({
     busy: busy || !closeOnEsc,
   })
   useFocusTrap(dialogRef, open && focusTrap)
-  useInitialFocus(open, dialogRef)
+  useInitialFocus(open, dialogRef, initialFocusRef)
 
   if (!open) return null
 
@@ -108,11 +117,12 @@ export default function Modal({
     >
       <div
         ref={dialogRef}
-        role="dialog"
+        role={role}
         aria-modal="true"
         tabIndex={-1}
         aria-label={resolvedAriaLabel}
         aria-labelledby={ariaLabelledBy}
+        aria-describedby={ariaDescribedBy}
         className={mergedDialogClass}
         style={mergedStyle}
         onClick={(e) => e.stopPropagation()}
