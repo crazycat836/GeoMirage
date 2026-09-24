@@ -123,7 +123,7 @@ def test_every_api_route_requires_token(method, path):
 
 class _StubCooldown:
     def get_status(self) -> dict[str, Any]:
-        return {"active": False, "remaining_sec": 0}
+        return {"enabled": False, "is_active": False, "remaining_seconds": 0.0}
 
 
 class _StubAppState:

@@ -15,9 +15,13 @@ frontend types can never drift from the backend reality.
 
 from __future__ import annotations
 
+import logging
+import os
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
+
+logger = logging.getLogger(__name__)
 
 
 # ── Connection / device lifecycle ────────────────────────────────
@@ -192,10 +196,21 @@ class WaypointProgressEvent(BaseModel):
 class StateChangeEvent(BaseModel):
     """Coarse state transition — frontend WS dispatcher routes these into
     the appropriate per-mode reducer (navigating / looping / multi_stop /
-    random_walk / flower / paused / completed / errored)."""
+    random_walk / flower / paused / completed / errored).
+
+    Mode-start transitions carry that mode's parameters at the top level:
+    ``destination`` (navigate), ``waypoints`` (loop / multi-stop / flower),
+    ``stop_duration`` + ``loop`` (multi-stop), ``center`` + ``radius_m``
+    (random walk). A pause carries ``paused_from``."""
     state: str
     udid: str | None = None
-    detail: dict[str, Any] | None = None
+    destination: dict[str, float] | None = None
+    waypoints: list[dict[str, float]] | None = None
+    stop_duration: float | None = None
+    loop: bool | None = None
+    center: dict[str, float] | None = None
+    radius_m: float | None = None
+    paused_from: str | None = None
 
 
 class RoutePathEvent(BaseModel):
@@ -372,3 +387,56 @@ WS_EVENTS: dict[str, type[BaseModel]] = {
     # Game-assist (Pikmin Bloom)
     "gold_ditto_cycle": GoldDittoCycleEvent,
 }
+
+
+# ── Payload validation (tests / debug only) ──────────────────────
+#
+# The models above only feed codegen unless something checks what the
+# backend actually sends. With GEOMIRAGE_WS_VALIDATE=1 (set by the test
+# conftest) every emitted event is checked against its model — unknown
+# type, missing / mistyped field, or a field the model doesn't declare —
+# and each mismatch is logged and recorded in ``VIOLATIONS`` so the test
+# harness can fail the test that produced it. Off in production: the
+# check would cost a model_validate per ~10 Hz position frame.
+
+VALIDATE_ENABLED: bool = os.environ.get("GEOMIRAGE_WS_VALIDATE") == "1"
+
+VIOLATIONS: list[str] = []
+
+
+def check_ws_event(
+    event_type: str, data: dict[str, Any], *, udid_added_later: bool = False,
+) -> None:
+    """Record a violation if *data* doesn't match the model for *event_type*.
+
+    No-op unless ``VALIDATE_ENABLED``. Never raises: emit paths swallow
+    callback errors, so a raise would be lost; the recorded violation is
+    what surfaces the mismatch. ``udid_added_later`` is for engine emits,
+    whose ``udid`` is filled in by AppState's event callback on the way
+    to the broadcaster.
+    """
+    if not VALIDATE_ENABLED:
+        return
+    if udid_added_later and isinstance(data, dict) and "udid" not in data:
+        data = {**data, "udid": "engine-udid"}
+    problem = _ws_event_problem(event_type, data)
+    if problem is not None:
+        msg = f"WS event {event_type!r} does not match its model: {problem} (payload={data!r})"
+        logger.error(msg)
+        VIOLATIONS.append(msg)
+
+
+def _ws_event_problem(event_type: str, data: Any) -> str | None:
+    model = WS_EVENTS.get(event_type)
+    if model is None:
+        return "unknown event type (add it to WS_EVENTS)"
+    if not isinstance(data, dict):
+        return f"payload is {type(data).__name__}, not an object"
+    extra = sorted(set(data) - set(model.model_fields))
+    if extra:
+        return f"undeclared fields {extra}"
+    try:
+        model.model_validate(data)
+    except ValidationError as exc:
+        return str(exc)
+    return None

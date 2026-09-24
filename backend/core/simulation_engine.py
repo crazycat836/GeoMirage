@@ -8,6 +8,7 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
+from models.ws_events import check_ws_event
 from models.schemas import (
     Coordinate,
     JoystickInput,
@@ -684,6 +685,7 @@ class SimulationEngine:
 
     async def _emit(self, event_type: str, data: dict) -> None:
         """Send an event to the WebSocket callback, if one is registered."""
+        check_ws_event(event_type, data, udid_added_later=True)
         if self.event_callback is not None:
             try:
                 await self.event_callback(event_type, data)

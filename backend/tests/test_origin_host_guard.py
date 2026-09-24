@@ -93,7 +93,7 @@ def test_dev_mode_allows_app_origin_or_none_http(dev_noauth, origin):
 
 class _StubCooldown:
     def get_status(self) -> dict[str, Any]:
-        return {"active": False, "remaining_sec": 0}
+        return {"enabled": False, "is_active": False, "remaining_seconds": 0.0}
 
 
 class _StubAppState:

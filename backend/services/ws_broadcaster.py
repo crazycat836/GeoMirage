@@ -17,6 +17,8 @@ import logging
 
 from fastapi import WebSocket
 
+from models.ws_events import check_ws_event
+
 logger = logging.getLogger(__name__)
 
 # Per-client send budget. One stalled client must not block the rest of the
@@ -65,6 +67,7 @@ async def broadcast(event_type: str, data: dict) -> None:
     reconnects instead of sitting on an open socket that never receives
     another event.
     """
+    check_ws_event(event_type, data)
     message = json.dumps({"type": event_type, "data": data})
 
     async def _send_one(ws: WebSocket) -> "WebSocket | None":

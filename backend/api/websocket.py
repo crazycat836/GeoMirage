@@ -11,6 +11,7 @@ from pydantic import ValidationError
 import auth
 from api._deps import get_app_state
 from models.schemas import JoystickInput
+from models.ws_events import check_ws_event
 from services import device_health
 from services.ws_broadcaster import (
     broadcast,
@@ -37,6 +38,11 @@ _WS_AUTH_FAIL_CODE = 4001
 _WS_AUTH_TIMEOUT_SECONDS = 5.0
 # Standard "policy violation" close, used to refuse a foreign Origin.
 _WS_POLICY_VIOLATION_CODE = 1008
+
+
+async def _send_event(ws: WebSocket, event_type: str, data: dict) -> None:
+    check_ws_event(event_type, data)
+    await ws.send_text(json.dumps({"type": event_type, "data": data}))
 
 
 async def _send_initial_state(ws: WebSocket) -> None:
@@ -75,14 +81,11 @@ async def _send_initial_state(ws: WebSocket) -> None:
     for engine in app_state.simulation_engines.values():
         pos = engine.current_position
         if pos:
-            await ws.send_text(json.dumps({
-                "type": "position_update",
-                "data": {"lat": pos.lat, "lng": pos.lng},
-            }))
+            await _send_event(ws, "position_update", {"lat": pos.lat, "lng": pos.lng})
             break
     # Cooldown state
     cd = app_state.cooldown_timer.get_status()
-    await ws.send_text(json.dumps({"type": "cooldown_update", "data": cd}))
+    await _send_event(ws, "cooldown_update", cd)
 
     # Device snapshot — pulled directly from the unified state store. Both
     # CONNECTED and DEGRADED count as "this device exists" for the list;
@@ -103,10 +106,7 @@ async def _send_initial_state(ws: WebSocket) -> None:
         if state == DeviceState.DEGRADED:
             degraded_udids.append(udid)
 
-    await ws.send_text(json.dumps({
-        "type": "device_snapshot",
-        "data": {"devices": connected},
-    }))
+    await _send_event(ws, "device_snapshot", {"devices": connected})
 
     # Re-emit tunnel_degraded for any device currently mid-reconnect so the
     # fresh client's chip shows the same "reconnecting…" hint other clients
@@ -114,10 +114,7 @@ async def _send_initial_state(ws: WebSocket) -> None:
     # so we use a generic "snapshot" tag — the renderer cares about the
     # event, not the reason text.
     for udid in degraded_udids:
-        await ws.send_text(json.dumps({
-            "type": "tunnel_degraded",
-            "data": {"udid": udid, "reason": "snapshot"},
-        }))
+        await _send_event(ws, "tunnel_degraded", {"udid": udid, "reason": "snapshot"})
 
     # Kick off a debounced health probe per snapshotted udid. The
     # service skips entirely when no DeviceManager is wired up (test

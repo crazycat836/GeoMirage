@@ -131,7 +131,13 @@ export interface WaypointProgressEvent {
 export interface StateChangeEvent {
   state: string
   udid?: string
-  detail?: Record<string, unknown>
+  destination?: Record<string, number>
+  waypoints?: Record<string, number>[]
+  stop_duration?: number
+  loop?: boolean
+  center?: Record<string, number>
+  radius_m?: number
+  paused_from?: string
 }
 
 /** Resolved OSRM polyline pushed once per leg start so the map can */
