@@ -1,9 +1,11 @@
 const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron')
 const path = require('path')
+const { pathToFileURL } = require('url')
 const os = require('os')
 const fs = require('fs')
 const { spawn } = require('child_process')
 const { buildElevatedBackendCommand, buildElevatedBackendScript } = require('./backend-command')
+const { DEV_SERVER_URL, isAppUrl, isExternalHttps } = require('./navigation')
 
 // Single source of truth for the app version — same file Electron already
 // consumes for `app.getVersion()` / auto-updater metadata.
@@ -14,6 +16,14 @@ const APP_VERSION = require('../package.json').version
 // backend is up) so the value we inject into the renderer is the fresh
 // one for this run, not a stale file from a previous crash.
 const TOKEN_FILE = path.join(os.homedir(), '.geomirage', 'token')
+
+// Only an unpackaged run loads the dev server. A packaged build ignores
+// `--dev`, so whatever holds port 5173 can't serve the UI (and receive
+// the session token) there.
+const isDev = !app.isPackaged
+const INDEX_HTML = path.join(__dirname, '../dist/index.html')
+// The page the main window loads; the only page allowed to stay in it.
+const APP_URL = isDev ? DEV_SERVER_URL : pathToFileURL(INDEX_HTML).href
 
 function readSessionToken() {
   try {
@@ -35,7 +45,17 @@ function readSessionToken() {
 // The file is re-read on every call: the backend writes a new token each
 // time it starts, which in a packaged build is after this process is
 // already up. The renderer asks again after a 401, and gets the new one.
-ipcMain.handle('session:get-token', () => readSessionToken())
+//
+// Only the app's own page gets the token. If the window ever ends up on
+// another page (same preload), the call is refused.
+ipcMain.handle('session:get-token', (event) => {
+  const url = event.senderFrame?.url ?? ''
+  if (!isAppUrl(url, APP_URL)) {
+    console.warn('[electron] session:get-token refused for', url)
+    throw new Error('session token is only available to the app page')
+  }
+  return readSessionToken()
+})
 
 // Strip the default "File Edit View Window Help" menubar — GeoMirage has its
 // own in-window controls and the native menu only adds noise on Windows.
@@ -208,30 +228,34 @@ async function createWindow() {
   // `javascript:`, and any custom scheme are blocked. Parsing failure is
   // also treated as deny so a malformed URL can't slip through.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    try {
-      const parsed = new URL(url)
-      if (parsed.protocol === 'https:') {
-        shell.openExternal(url)
-      }
-    } catch {
-      // Malformed URL — ignore.
-    }
+    if (isExternalHttps(url)) shell.openExternal(url)
     return { action: 'deny' }
   })
 
-  // Only an unpackaged run loads the dev server. A packaged build ignores
-  // `--dev`, so whatever holds port 5173 can't serve the UI (and receive
-  // the session token) there.
-  const isDev = !app.isPackaged
+  // Keep the main window on the app page. A plain link (the map's
+  // attribution) or a file / link dropped on the window would otherwise
+  // replace the UI, and there is no menu to get back. `https:` links open
+  // in the default browser instead; everything else is just dropped.
+  mainWindow.webContents.on('will-navigate', (event, legacyUrl) => {
+    const url = event.url ?? legacyUrl
+    if (isAppUrl(url, APP_URL)) return
+    event.preventDefault()
+    if (isExternalHttps(url)) shell.openExternal(url)
+  })
+  mainWindow.webContents.on('will-redirect', (event, legacyUrl) => {
+    const url = event.url ?? legacyUrl
+    if (!isAppUrl(url, APP_URL)) event.preventDefault()
+  })
+
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173')
+    mainWindow.loadURL(DEV_SERVER_URL)
   } else {
     // Spawn the backend in parallel and load the UI immediately. The
     // renderer already has fetch-with-retry so it rides out the backend
     // startup race — no need to block loadFile on a readiness probe and
     // stare at a blank window for seconds.
     startBackend()
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
+    mainWindow.loadFile(INDEX_HTML)
   }
 }
 
