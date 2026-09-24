@@ -8,14 +8,14 @@ The design language draws from iOS-style segmented controls (`.seg-*` system) la
 
 > **Note on glass surfaces.** The primary floating chrome (`.glass-pill`, `.glass-panel`, variants) is rendered as solid `rgba(19, 20, 22, 0.92–0.94)` dark fills rather than `backdrop-filter: blur()`. Chromium has a fundamental tile-boundary artifact when sampling a tiled backdrop (the Leaflet map) through a blur kernel on elements wider than ~256px: adjacent GPU compositor tiles resolve the filter with slightly different precision, producing a visible vertical color seam across every wide surface (SearchBar, BottomDock, BottomModeBar). None of the standard workarounds (`saturate()` removal, `clip-path`, layer promotion via `translateZ` / `will-change`, pseudo-element architecture) moves the seam because it originates in the backdrop sampling path, not the element. Safari is unaffected. Solid 0.92+ alpha keeps the floating-chrome reading without exposing the sampling path. `backdrop-filter` is still used on small, short-lived elements (`.modal-overlay`, `.toast-pill`, `.map-pin-dest .label`) where the seam is either invisible or not perceptible.
 
-The color system is almost entirely achromatic — dark backgrounds with white/gray text — punctuated by a single accent: a cool blue (`#6c8cff`) used for active states, focus rings, and CTAs. Semantic colors (success teal, danger red, warning yellow) appear only in status contexts. A subtle noise texture overlay (`opacity: 0.035`) adds film-grain atmosphere to the dark canvas.
+The color system is almost entirely achromatic — dark backgrounds with white/gray text — punctuated by a single accent: a violet (`#a78bfa`, Tailwind violet-400) used for active states, focus rings, and CTAs. Semantic colors (success teal, danger red, warning yellow) appear only in status contexts. A subtle noise texture overlay (`opacity: 0.035`) adds film-grain atmosphere to the dark canvas.
 
 **Key Characteristics:**
 - Dark-mode-native: `#0a0a0c` canvas, `#131416` panels, `#1a1b20` elevated surfaces
-- Inter as primary font, JetBrains Mono for coordinates/code
+- Geist as primary font, Geist Mono for coordinates/code
 - Compact 13px base font size — this is a tool UI, not a reading experience
 - Weight-driven hierarchy: 400 (reading), 500 (labels), 600 (emphasis/CTA)
-- Single accent blue `#6c8cff` — the only chromatic color in the UI chrome
+- Single accent violet `#a78bfa` — the only chromatic color in the UI chrome
 - Semi-transparent white borders (`rgba(255,255,255,0.05)` to `rgba(255,255,255,0.12)`)
 - Solid high-alpha dark panels floating over a full-screen map (see note on glass surfaces above)
 - iOS-style segmented control system (`.seg-*`) as the primary component pattern
@@ -44,13 +44,13 @@ The color system is almost entirely achromatic — dark backgrounds with white/g
 ### Accent
 | Token | Value | Role |
 |-------|-------|------|
-| `--color-accent` | `#6c8cff` | Primary blue — CTAs, focus rings, active states, toggle on |
-| `--color-accent-hover` | `#8aa3ff` | Hover variant for accent elements |
-| `--color-accent-strong` | `#a8bdff` | High-contrast accent text for use on `accent-dim` backgrounds (chip-on / pill-on labels) |
-| `--color-accent-dim` | `rgba(108,140,255,0.12)` | Tinted background for active chips, selected items |
-| `--color-accent-glow` | `rgba(108,140,255,0.25)` | Box-shadow glow on primary buttons |
+| `--color-accent` | `#a78bfa` | Primary violet — CTAs, focus rings, active states, toggle on |
+| `--color-accent-hover` | `#b9a3fc` | Hover variant for accent elements |
+| `--color-accent-strong` | `#c4b5fd` | High-contrast accent text for use on `accent-dim` backgrounds (chip-on / pill-on labels) |
+| `--color-accent-dim` | `rgba(167,139,250,0.12)` | Tinted background for active chips, selected items |
+| `--color-accent-glow` | `rgba(167,139,250,0.25)` | Box-shadow glow on primary buttons |
 
-> `--color-accent` (`#6c8cff`) is brand-correct on `surface-0`/`surface-1` (5.28 / 4.35) but falls below AA on `accent-dim` over `surface-2/3`. Use `--color-accent-strong` for any accent-colored text rendered over an accent-tinted background.
+> `--color-accent` (`#a78bfa`) measures 7.27:1 on `surface-0`, 6.77:1 on `surface-1`, 6.32:1 on `surface-2` and 5.76:1 on `surface-3`. On `accent-dim` it drops to 5.26:1 over `surface-2` and 4.77:1 over `surface-3`, close to the AA line; `--color-accent-strong` (`#c4b5fd`) stays at 7.0:1 or higher on every `accent-dim` combination. Use `--color-accent-strong` for any accent-colored text rendered over an accent-tinted background.
 
 ### Semantic / Status
 | Token | Value | Role |
@@ -117,7 +117,7 @@ Reserved for specific chrome elements; do not use for generic panels.
 | `--color-border` | `rgba(255,255,255,0.08)` | Standard border — cards, inputs, panels |
 | `--color-border-subtle` | `rgba(255,255,255,0.05)` | Ultra-subtle dividers, section separators |
 | `--color-border-strong` | `rgba(255,255,255,0.12)` | Emphasis border — hover states, active elements |
-| `--color-border-focus` | `rgba(108,140,255,0.4)` | Focus ring for inputs |
+| `--color-border-focus` | `rgba(167,139,250,0.4)` | Focus ring for inputs |
 
 ### Overlay
 | Token | Value | Role |
@@ -132,14 +132,15 @@ Reserved for specific chrome elements; do not use for generic panels.
 | `--shadow-md` | `0 4px 16px rgba(0,0,0,0.35)` | Standard elevation — panels, cards |
 | `--shadow-lg` | `0 8px 32px rgba(0,0,0,0.45)` | High elevation — popups, context menus, toasts |
 | `--shadow-xl` | `0 20px 60px rgba(12,18,40,0.65)` | Maximum elevation — modals |
-| `--shadow-glow` | `0 0 20px rgba(108,140,255,0.2)` | Accent glow — primary CTA buttons |
+| `--shadow-glow` | `0 0 24px rgba(167,139,250,0.28)` | Accent glow — primary CTA buttons |
 | `--shadow-inset` | `inset 0 1px 0 rgba(255,255,255,0.06)` | Top-edge highlight for glass-like surfaces |
 
 ## 3. Typography
 
 ### Font Families
-- **Primary**: `'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif`
-- **Monospace** (`--font-mono`): `'JetBrains Mono', 'SF Mono', 'Fira Code', ui-monospace, monospace`
+- **Primary** (`body` in `styles/base.css`): `'Geist', ui-sans-serif, system-ui, -apple-system, sans-serif`
+- **Monospace** (`--font-mono`): `'Geist Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace`
+- Both families load from Google Fonts in `index.html`.
 
 ### Font Features
 - Body: `-webkit-font-smoothing: antialiased`, `letter-spacing: -0.005em`
@@ -331,7 +332,7 @@ Reusable overlay + dialog surface:
 │  └─────────┘            └──────────────┘ │
 │                                          │
 │        ┌──────────────────┐              │
-│        │ ETA Bar (top)    │  z-bar       │
+│        │ ETA Bar (top)    │  z-eta       │
 │        └──────────────────┘              │
 │                         ┌──────────┐     │
 │                         │ Joystick │     │
@@ -353,20 +354,24 @@ Reusable overlay + dialog surface:
 
 ## 6. Z-Index Scale
 
-All z-index values are defined as CSS custom properties for consistency:
+All z-index values are defined as CSS custom properties in `src/styles/tokens.css`:
 
 | Token | Value | Usage |
 |-------|-------|-------|
 | `--z-base` | 0 | Map canvas, noise overlay, base elements |
-| `--z-map-ui` | 1000 | Map controls (zoom, layer picker) — sits above Leaflet's internal panes |
-| `--z-bar` | 200 | Status bar, ETA bar |
+| `--z-bar` | 200 | Status bar |
+| `--z-eta` | 390 | ETA pill — above the map, below the top bar so the search dropdown wins |
 | `--z-ui` | 400 | TopBar, ModeToolbar, FloatingPanel, SettingsMenu |
 | `--z-float` | 500 | Toasts, joystick, bookmark popups, bookmark add dialog |
 | `--z-dropdown` | 600 | Context menus, dropdowns, search results |
+| `--z-map-ui` | 650 | Map controls (zoom, layer picker) — above the bottom dock / mode bar, below drawer / overlay / modal |
 | `--z-drawer` | 700 | Drawer backdrop + panel (DeviceDrawer, LibraryDrawer) |
 | `--z-overlay` | 800 | Heavy overlays (DDI mount) |
+| `--z-popover` | 850 | Body-portaled popup menus (KebabMenu) — above the drawer that hosts the trigger, below modals |
 | `--z-modal` | 900 | Modals (initial position, repair confirm, update checker) |
 | `--z-toast` | 950 | Toast notifications (above everything) |
+
+Map chrome only has to beat the Leaflet map subtree, which forms its own stacking context, so `--z-eta` and `--z-map-ui` sit below drawers and modals on purpose.
 
 **Note:** Leaflet's internal `zIndexOffset` for markers (1000+) operates within the map's own stacking context and is unrelated to the application z-index scale.
 
@@ -478,15 +483,15 @@ This section captures how the design system maps to **WCAG 2.2 AA** and the **iO
 |-------------|-----------|-----|
 | Body 17pt | 13px base | Information-dense desktop tool UI; rendered for mouse/keyboard, not touch. |
 | 44pt single tap target | 36px acceptable tier | Mouse-first input reduces minimum need; primary actions still 44px. |
-| SF Pro family | Inter | Cross-platform consistency in an Electron app. |
+| SF Pro family | Geist | Cross-platform consistency in an Electron app. |
 | System dark/light | Dark only | Mapping/satellite tool — light mode would compete with map tile contrast. |
 
 ## 9. Tailwind CSS Integration
 
-GeoMirage uses **Tailwind CSS v4** via the Vite plugin (`@tailwindcss/vite`). There is no `tailwind.config.js` — Tailwind v4 reads tokens directly from the `@theme` block in `index.css`.
+GeoMirage uses **Tailwind CSS v4** via the Vite plugin (`@tailwindcss/vite`). There is no `tailwind.config.js` — Tailwind v4 reads tokens directly from the `@theme` block in `src/styles/tokens.css`. `src/index.css` only `@import`s Tailwind, `tokens.css` (first) and the files under `src/styles/`.
 
 ### How It Works
-1. Design tokens are defined in `@theme { }` in `index.css`
+1. Design tokens are defined in `@theme { }` in `src/styles/tokens.css`
 2. Tailwind v4 automatically generates utility classes from these tokens
 3. Components use a mix of:
    - **Tailwind utilities**: `flex`, `gap-2`, `p-3`, `rounded-lg`, `items-center`
@@ -524,7 +529,7 @@ GeoMirage uses **Tailwind CSS v4** via the Vite plugin (`@tailwindcss/vite`). Th
 - Don't use box-shadow for elevation alone on dark surfaces — use background luminance stepping
 - Don't add new keyframes without a corresponding `.anim-*` utility class
 - Don't mix approaches in a single component (Tailwind for layout but inline for colors)
-- Don't introduce warm or saturated colors into UI chrome — cool gray with blue accent only
+- Don't introduce warm or saturated colors into UI chrome — cool gray with the violet accent only
 - Don't use pure `#ffffff` as primary text — always use `--color-text-1` (`#e8eaf0`)
 - Don't use Tailwind's semantic color utilities (`text-green-400`, `text-red-400`, `bg-amber-400/15`) — use the `--color-*-text` / `--color-*-dim` tokens instead
 - Don't render interactive `<div onClick>` elements — they're invisible to keyboard and assistive tech. Use `<button>` (or wire up `role`, `tabIndex`, and a keyboard handler if a `div` is unavoidable)
@@ -537,7 +542,7 @@ These items are intentional omissions or lower-priority future work:
 | Category | Status | Notes |
 |----------|--------|-------|
 | Light mode | Intentional omission | This is a dark-mode-only tool UI |
-| Inter OpenType features | Not applied | `cv01`/`ss03` could be added for a more geometric Inter, but not critical for a tool UI |
+| Geist OpenType features | Not applied | Stylistic sets could be enabled, but not critical for a tool UI |
 | Tooltip component | Not defined | No tooltip pattern exists yet; add when needed |
 | Dropdown/select component | Not defined | Native selects used; create when custom dropdown is needed |
 | Grid system | Not used | Layout is entirely positioned (fixed/absolute) over a full-screen map |
