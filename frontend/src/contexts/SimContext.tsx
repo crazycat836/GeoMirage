@@ -85,6 +85,8 @@ export interface SimActionsValue extends Pick<Sim,
   handleSetTeleportDest: (lat: number, lng: number) => void
   handleClearTeleportDest: () => void
   handleMapClick: (lat: number, lng: number) => void
+  /** Joystick pad input → throttled `joystick_input` WS frames. */
+  joystickInput: (direction: number, intensity: number) => void
 }
 
 // ── Ticking state slice ────────────────────────────────────────────────
@@ -116,11 +118,7 @@ export interface SimStateValue extends Pick<Sim,
   | 'lapProgress'
   | 'effectiveSpeed'
   | 'error'
-> {
-  // From useJoystick — direction/intensity for the active joystick UI
-  // (ticks while the pad is being driven) plus its stable input setter.
-  joystick: ReturnType<typeof useJoystick>
-}
+> {}
 
 const SimActionsContext = createContext<SimActionsValue | null>(null)
 const SimStateContext = createContext<SimStateValue | null>(null)
@@ -163,7 +161,7 @@ export function SimProvider({ children }: SimProviderProps) {
 
   // Sensitivity stepper is 1-5 with 3 = baseline 1.0×; the wire value is
   // level/3 so level 5 ≈ 1.67× and level 1 ≈ 0.33×.
-  const joystick = useJoystick(
+  const { updateFromPad: joystickInput } = useJoystick(
     (type, data) => sendMessage(type, { ...data }),
     sim.mode === SimMode.Joystick,
     joystickSensitivity / 3,
@@ -702,6 +700,7 @@ export function SimProvider({ children }: SimProviderProps) {
     handleGenerateAllRandom,
     handleOpenLog,
     handleMapClick,
+    joystickInput,
     setMode: sim.setMode,
     loadRouteWaypoints: sim.loadRouteWaypoints,
     setWaypoints: sim.setWaypoints,
@@ -732,6 +731,7 @@ export function SimProvider({ children }: SimProviderProps) {
     handleGenerateAllRandom,
     handleOpenLog,
     handleMapClick,
+    joystickInput,
     sim.setMode,
     sim.loadRouteWaypoints,
     sim.setWaypoints,
@@ -773,7 +773,6 @@ export function SimProvider({ children }: SimProviderProps) {
     lapProgress: sim.lapProgress,
     effectiveSpeed: sim.effectiveSpeed,
     error: sim.error,
-    joystick,
   }), [
     sim.mode,
     sim.moveMode,
@@ -798,9 +797,6 @@ export function SimProvider({ children }: SimProviderProps) {
     sim.lapProgress,
     sim.effectiveSpeed,
     sim.error,
-    joystick.direction,
-    joystick.intensity,
-    joystick.updateFromPad,
   ])
 
   return (
