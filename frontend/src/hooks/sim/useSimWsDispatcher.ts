@@ -206,6 +206,11 @@ export interface SimWsSetters {
   setDdiMissing: React.Dispatch<React.SetStateAction<DdiMissingSignal | null>>
   setError: React.Dispatch<React.SetStateAction<string | null>>
   localizeError: (code: SimErrorCode) => string
+  /** Primary device udid (null when unknown). The session-global run
+   *  overlays (pause countdown, lap / waypoint progress) only follow
+   *  frames from this device, so a second phone in group mode can't
+   *  overwrite or clear them. */
+  getPrimaryUdid: () => string | null
 }
 
 /**
@@ -235,6 +240,10 @@ export function useSimWsDispatcher(
         if (udid) s.updateRuntime(udid, patch)
         else s.patchPrimaryRuntime(patch)
       }
+      // Whether this frame may write the session-global run overlays.
+      // Untagged frames and an unknown primary keep single-device behavior.
+      const primaryUdid = s.getPrimaryUdid()
+      const fromPrimary = !udid || !primaryUdid || udid === primaryUdid
 
       switch (wsMessage.type) {
         case 'position_update': {
@@ -315,17 +324,19 @@ export function useSimWsDispatcher(
           // single-device behavior, now applied to the runtime since the
           // runtime is the single source feeding the UI.
           patchRuntime({ progress: 1, state: 'idle', eta: null, destination: null })
-          s.setPauseEndAt(null)
-          s.setWaypointProgress(null)
-          s.setLapProgress(null)
-          s.setDestination(null)
+          if (fromPrimary) {
+            s.setPauseEndAt(null)
+            s.setWaypointProgress(null)
+            s.setLapProgress(null)
+            s.setDestination(null)
+          }
           break
         }
         case 'waypoint_progress': {
           const d = parseWaypointProgress(wsMessage.data)
           if (d?.current_index != null) {
             patchRuntime({ waypointIndex: d.current_index })
-            s.setWaypointProgress({
+            if (fromPrimary) s.setWaypointProgress({
               current: d.current_index,
               next: d.next_index ?? d.current_index + 1,
               total: d.total ?? 0,
@@ -335,7 +346,7 @@ export function useSimWsDispatcher(
         }
         case 'lap_complete': {
           const d = parseLapComplete(wsMessage.data)
-          if (d?.lap != null) {
+          if (d?.lap != null && fromPrimary) {
             s.setLapProgress({
               current: d.lap,
               total: d.total ?? null,
@@ -425,13 +436,13 @@ export function useSimWsDispatcher(
         case 'pause_countdown': {
           const d = parsePauseCountdown(wsMessage.data)
           const dur = d?.duration_seconds
-          if (typeof dur === 'number' && dur > 0) {
+          if (typeof dur === 'number' && dur > 0 && fromPrimary) {
             s.setPauseEndAt(Date.now() + dur * 1000)
           }
           break
         }
         case 'pause_countdown_end': {
-          s.setPauseEndAt(null)
+          if (fromPrimary) s.setPauseEndAt(null)
           break
         }
       }

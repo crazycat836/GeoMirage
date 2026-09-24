@@ -228,6 +228,10 @@ export function useSimulation(subscribe?: WsSubscribe, options?: UseSimulationOp
   // single-device fields this hook returns (currentPosition, status,
   // progress, eta, routePath) are derived from the primary entry.
   const { runtimes, setRuntimes, updateRuntime, patchPrimaryRuntime } = useSimRuntimes(primaryUdid)
+  // Latest primary udid for the WS dispatcher's overlay gating.
+  const primaryUdidRef = useRef(primaryUdid)
+  useEffect(() => { primaryUdidRef.current = primaryUdid }, [primaryUdid])
+  const getPrimaryUdid = useCallback(() => primaryUdidRef.current, [])
 
   // Tick the pause countdown at 1 Hz
   useEffect(() => {
@@ -264,6 +268,7 @@ export function useSimulation(subscribe?: WsSubscribe, options?: UseSimulationOp
     setDdiMissing,
     setError,
     localizeError,
+    getPrimaryUdid,
   })
 
   // Derived: primary runtime feeding the single-device view below —

@@ -90,7 +90,12 @@ interface Harness {
   mocks: Record<string, { mock: { calls: unknown[][] } }>
 }
 
-function createHarness(seed?: { runtimes?: RuntimesMap; globals?: Partial<GlobalState> }): Harness {
+function createHarness(seed?: {
+  runtimes?: RuntimesMap
+  globals?: Partial<GlobalState>
+  /** Primary device udid the dispatcher sees (null = unknown). */
+  primaryUdid?: string | null
+}): Harness {
   const globals: GlobalState = { ...initialGlobals(), ...seed?.globals }
 
   const track = <T,>(key: { [K in keyof GlobalState]: GlobalState[K] extends T ? K : never }[keyof GlobalState]) =>
@@ -118,6 +123,9 @@ function createHarness(seed?: { runtimes?: RuntimesMap; globals?: Partial<Global
     setDdiMissing: track<GlobalState['ddiMissing']>('ddiMissing'),
     setError: track<string | null>('error'),
     localizeError: vi.fn((code) => `localized:${code}`),
+    // Plain function (not a spy) so the "which setters fired" table
+    // doesn't count reads.
+    getPrimaryUdid: () => seed?.primaryUdid ?? null,
   }
 
   let handler: ((m: WsMessage) => void) | undefined
@@ -660,6 +668,54 @@ describe('pause_countdown / ddi / tunnel_lost / device_disconnected', () => {
     })
     h.send('device_disconnected', {})
     expect(h.runtimes[UDID_A].state).toBe('disconnected')
+  })
+})
+
+// ── Multi-device overlays follow the primary device only ──────────────
+
+describe('session overlays with two devices', () => {
+  it('pause countdown follows the primary device; the other device cannot clear it', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_000_000)
+    const h = createHarness({ primaryUdid: UDID_A })
+    h.send('pause_countdown', { udid: UDID_A, duration_seconds: 10 })
+    h.send('pause_countdown', { udid: UDID_B, duration_seconds: 3 })
+    expect(h.globals.pauseEndAt).toBe(1_000_000 + 10_000)
+    h.send('pause_countdown_end', { udid: UDID_B })
+    expect(h.globals.pauseEndAt).toBe(1_000_000 + 10_000)
+    h.send('pause_countdown_end', { udid: UDID_A })
+    expect(h.globals.pauseEndAt).toBeNull()
+  })
+
+  it('lap and waypoint progress ignore the non-primary device (its runtime still updates)', () => {
+    const h = createHarness({ primaryUdid: UDID_A })
+    h.send('lap_complete', { udid: UDID_A, lap: 2, total: 5 })
+    h.send('lap_complete', { udid: UDID_B, lap: 4, total: 5 })
+    expect(h.globals.lapProgress).toEqual({ current: 2, total: 5 })
+
+    h.send('waypoint_progress', { udid: UDID_A, current_index: 1, next_index: 2, total: 4 })
+    h.send('waypoint_progress', { udid: UDID_B, current_index: 3, next_index: 0, total: 4 })
+    expect(h.globals.waypointProgress).toEqual({ current: 1, next: 2, total: 4 })
+    expect(h.runtimes[UDID_B].waypointIndex).toBe(3)
+  })
+
+  it('a non-primary run completing leaves the primary overlays alone', () => {
+    const h = createHarness({
+      primaryUdid: UDID_A,
+      globals: { pauseEndAt: 123, lapProgress: { current: 1, total: 3 } },
+    })
+    h.send('navigation_complete', { udid: UDID_B })
+    expect(h.globals.pauseEndAt).toBe(123)
+    expect(h.globals.lapProgress).toEqual({ current: 1, total: 3 })
+    expect(h.runtimes[UDID_B].state).toBe('idle')
+  })
+
+  it('single device with no known primary behaves as before', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_000_000)
+    const h = createHarness()
+    h.send('pause_countdown', { udid: UDID_A, duration_seconds: 5 })
+    expect(h.globals.pauseEndAt).toBe(1_000_000 + 5000)
+    h.send('pause_countdown_end', { udid: UDID_A })
+    expect(h.globals.pauseEndAt).toBeNull()
   })
 })
 
