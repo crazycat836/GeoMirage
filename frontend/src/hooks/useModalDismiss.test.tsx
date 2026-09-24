@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, fireEvent, cleanup } from '@testing-library/react'
-import { useModalDismiss } from './useModalDismiss'
+import { useModalDismiss, useEscLayer } from './useModalDismiss'
 
 afterEach(cleanup)
 
@@ -72,5 +72,48 @@ describe('useModalDismiss', () => {
 
     expect(dismissInner).not.toHaveBeenCalled()
     expect(dismissOuter).not.toHaveBeenCalled()
+  })
+
+  it('ignores an Escape that an inner control already handled', () => {
+    const onDismiss = vi.fn()
+    render(<Layer open onDismiss={onDismiss} />)
+
+    const e = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    e.preventDefault()
+    document.dispatchEvent(e)
+
+    expect(onDismiss).not.toHaveBeenCalled()
+  })
+
+  it('ignores the Escape that closes an IME candidate window', () => {
+    const onDismiss = vi.fn()
+    render(<Layer open onDismiss={onDismiss} />)
+
+    fireEvent.keyDown(document, { key: 'Escape', isComposing: true })
+
+    expect(onDismiss).not.toHaveBeenCalled()
+  })
+})
+
+function EscLayer({ active, onEscape }: { active: boolean; onEscape: () => void }) {
+  useEscLayer(active, onEscape)
+  return null
+}
+
+describe('useEscLayer', () => {
+  it('shares one stack with useModalDismiss: a menu over a dialog closes alone', () => {
+    const dismissDialog = vi.fn()
+    const closeMenu = vi.fn()
+    render(
+      <>
+        <Layer open onDismiss={dismissDialog} />
+        <EscLayer active onEscape={closeMenu} />
+      </>,
+    )
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    expect(closeMenu).toHaveBeenCalledOnce()
+    expect(dismissDialog).not.toHaveBeenCalled()
   })
 })

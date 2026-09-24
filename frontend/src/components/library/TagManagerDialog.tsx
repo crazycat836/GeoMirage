@@ -88,7 +88,7 @@ export default function TagManagerDialog({
       }
       actions={
         <button type="button" className="action-btn" onClick={onClose}>
-          {t('generic.cancel')}
+          {t('generic.done')}
         </button>
       }
     >

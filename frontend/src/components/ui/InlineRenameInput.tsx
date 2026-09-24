@@ -39,7 +39,12 @@ export default function InlineRenameInput({
       onBlur={onCommit}
       onKeyDown={(e) => {
         if (e.key === 'Enter' && !e.nativeEvent.isComposing) onCommit()
-        else if (e.key === 'Escape') onCancel()
+        else if (e.key === 'Escape' && !e.nativeEvent.isComposing) {
+          // Mark the key handled so the dialog / drawer around the row
+          // (useEscLayer skips defaultPrevented) doesn't close with it.
+          e.preventDefault()
+          onCancel()
+        }
       }}
       onClick={(e) => e.stopPropagation()}
       style={{ paddingLeft: 8, ...style }}

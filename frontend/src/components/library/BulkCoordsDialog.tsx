@@ -65,6 +65,9 @@ export default function BulkCoordsDialog({ open, mode, onCancel, onConfirm }: Bu
       open={open}
       onClose={onCancel}
       busy={busy}
+      // A stray click outside must not throw away a pasted list; Cancel
+      // and Esc still close it.
+      closeOnBackdropClick={text.trim() === ''}
       title={t('bulk.title')}
       ariaDescribedBy={summaryId}
       initialFocusRef={textareaRef}

@@ -12,13 +12,16 @@ import { render, act, cleanup } from '@testing-library/react'
 
 const h = vi.hoisted(() => {
   const renders: Record<string, number> = {}
-  const stub = (name: string) => function Stub() {
+  const lastProps: Record<string, Record<string, unknown>> = {}
+  const stub = (name: string) => function Stub(props: Record<string, unknown>) {
     renders[name] = (renders[name] ?? 0) + 1
+    lastProps[name] = props
     return null
   }
   const passthrough = ({ children }: { children: unknown }) => children
   return {
     renders,
+    lastProps,
     stub,
     passthrough,
     toastValue: { showToast: () => {} },
@@ -28,7 +31,7 @@ const h = vi.hoisted(() => {
     bmValue: { addBmDialog: null, places: [], tags: [], setAddBmDialog: () => {}, submitAddBookmark: () => {}, handleAddBookmark: () => {} },
   }
 })
-const { renders } = h
+const { renders, lastProps } = h
 
 vi.mock('./services/usage', () => ({ useUsageCapture: () => {} }))
 vi.mock('./i18n', () => {
@@ -163,5 +166,20 @@ describe('AppShell render isolation', () => {
       setSim!((s) => ({ ...s, status: { running: true, paused: true, state: 'paused' } }))
     })
     expect(renders.SettingsMenu).toBe(before + 1)
+  })
+})
+
+describe('AppShell keyboard shortcuts', () => {
+  it('leaves Escape to the library drawer instead of closing it from the window', () => {
+    // The drawer dismisses itself through the Esc layer stack; a second,
+    // window-level close here also shut the library when Esc was meant for
+    // a dialog or rename field inside it.
+    render(<App />)
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', metaKey: true })) })
+    expect(lastProps.LibraryDrawer.open).toBe(true)
+
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })) })
+
+    expect(lastProps.LibraryDrawer.open).toBe(true)
   })
 })

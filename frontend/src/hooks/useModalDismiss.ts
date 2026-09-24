@@ -36,20 +36,61 @@ export function hasOpenLayer(): boolean {
 }
 
 /**
+ * Put a surface on the shared Escape layer stack while *active*: Escape
+ * calls *onEscape* only when this is the most recently opened layer, so
+ * stacked surfaces (a menu over a dialog over a drawer) close one at a
+ * time. Use it directly for popovers and menus that handle their own focus;
+ * dialogs and drawers get it through `useModalDismiss`.
+ *
+ * Skips Escape that something else already handled (`defaultPrevented`,
+ * e.g. an inline rename input cancelling itself) and Escape that closes an
+ * IME candidate window (`isComposing`).
+ */
+export function useEscLayer(active: boolean, onEscape: () => void, busy = false): void {
+  const layerRef = useRef<symbol | null>(null)
+
+  // Track this surface on the layer stack for the whole time it is open.
+  // Kept separate from the keydown effect so `busy` / `onEscape` identity
+  // changes don't re-push the layer (which would wrongly move it to the top).
+  useEffect(() => {
+    if (!active) return
+    const layer = Symbol('esc-layer')
+    layerRef.current = layer
+    pushLayer(layer)
+    return () => {
+      removeLayer(layer)
+      layerRef.current = null
+    }
+  }, [active])
+
+  useEffect(() => {
+    if (!active) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing) return
+      const layer = layerRef.current
+      if (layer == null || !isTopLayer(layer)) return
+      e.preventDefault()
+      if (!busy) onEscape()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [active, busy, onEscape])
+}
+
+/**
  * Shared keyboard-dismiss + focus-restore plumbing for modal-shaped
  * surfaces (drawers, dialogs).
  *
  * - Captures the `document.activeElement` on open so focus returns
  *   to the previous control on close.
- * - Binds Escape → `onDismiss` while open — only for the topmost open
- *   layer, so stacked surfaces dismiss one at a time.
+ * - Binds Escape → `onDismiss` while open through `useEscLayer`, so
+ *   stacked surfaces dismiss one at a time.
  *
  * Focus placement inside the dialog is *not* handled here — callers
  * decide where to move focus (first tab, textarea, confirm button).
  */
 export function useModalDismiss({ open, onDismiss, busy = false }: UseModalDismissOptions): void {
   const previousFocusRef = useRef<HTMLElement | null>(null)
-  const layerRef = useRef<symbol | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -59,30 +100,5 @@ export function useModalDismiss({ open, onDismiss, busy = false }: UseModalDismi
     }
   }, [open])
 
-  // Track this surface on the layer stack for the whole time it is open.
-  // Kept separate from the keydown effect so `busy` / `onDismiss` identity
-  // changes don't re-push the layer (which would wrongly move it to the top).
-  useEffect(() => {
-    if (!open) return
-    const layer = Symbol('modal-dismiss-layer')
-    layerRef.current = layer
-    pushLayer(layer)
-    return () => {
-      removeLayer(layer)
-      layerRef.current = null
-    }
-  }, [open])
-
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || busy) return
-      const layer = layerRef.current
-      if (layer == null || !isTopLayer(layer)) return
-      e.preventDefault()
-      onDismiss()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [open, busy, onDismiss])
+  useEscLayer(open, onDismiss, busy)
 }

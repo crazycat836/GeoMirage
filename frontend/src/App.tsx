@@ -432,10 +432,9 @@ function AppShell() {
       if (e.metaKey && e.key === 'b') {
         e.preventDefault(); setLibraryOpen(true); return
       }
-      if (e.key === 'Escape') {
-        if (libraryOpen) { setLibraryOpen(false); return }
-        return
-      }
+      // Escape is not handled here: the library drawer and every dialog /
+      // menu close themselves through the useEscLayer stack, one layer per
+      // press.
       if (!isInput && e.key >= '1' && e.key <= '4') {
         const modeForKey: SimMode[] = [SimMode.Teleport, SimMode.Navigate, SimMode.Loop, SimMode.Joystick]
         const next = modeForKey[parseInt(e.key) - 1]
@@ -453,7 +452,7 @@ function AppShell() {
     return () => window.removeEventListener('keydown', handler)
     // Deps are stable actions + the two run-state booleans — the listener
     // re-subscribes when the run/pause state flips, not on position ticks.
-  }, [libraryOpen, handleModeChange, sim.mode, sim.isRunning, sim.isPaused, handlePause, handleResume])
+  }, [handleModeChange, sim.mode, sim.isRunning, sim.isPaused, handlePause, handleResume])
 
   return (
     <div className="relative w-screen h-screen overflow-hidden">

@@ -5,6 +5,9 @@ import { useAvatarContext, type AvatarKind } from '../../contexts/AvatarContext'
 import { AVATAR_PRESETS } from '../../lib/avatars'
 import { useT } from '../../i18n'
 import type { StringKey } from '../../i18n/strings'
+import { useModalDismiss } from '../../hooks/useModalDismiss'
+import { useFocusTrap } from '../../hooks/useFocusTrap'
+import { useInitialFocus } from '../../hooks/useInitialFocus'
 
 interface AvatarPickerProps {
   anchor: DOMRect | null
@@ -23,24 +26,29 @@ function AvatarPicker({ anchor, onClose }: AvatarPickerProps) {
 
   useEffect(() => { setStaged(current) }, [current])
 
-  // Dismiss on outside click or Esc.
+  // Dismiss on outside click.
   useEffect(() => {
     const onDown = (e: Event) => {
       const target = e.target as Element | null
       if (target && menuRef.current?.contains(target)) return
       onClose()
     }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     const tid = setTimeout(() => {
       document.addEventListener('pointerdown', onDown)
-      document.addEventListener('keydown', onKey)
     }, 0)
     return () => {
       clearTimeout(tid)
       document.removeEventListener('pointerdown', onDown)
-      document.removeEventListener('keydown', onKey)
     }
   }, [onClose])
+
+  // Esc on the shared layer stack (closes the picker, not the Settings
+  // popover behind it), focus moves in on open, Tab stays inside, and focus
+  // returns to the Settings row on close.
+  const open = anchor != null
+  useModalDismiss({ open, onDismiss: onClose })
+  useFocusTrap(menuRef, open)
+  useInitialFocus(open, menuRef)
 
   if (!anchor) return null
 
@@ -83,9 +91,9 @@ function AvatarPicker({ anchor, onClose }: AvatarPickerProps) {
       data-fc="popover.avatar-picker"
       ref={menuRef}
       role="dialog"
+      aria-modal="true"
       aria-label={t('avatar.picker_title')}
       data-avatar-picker
-
       style={{
         position: 'fixed',
         top,

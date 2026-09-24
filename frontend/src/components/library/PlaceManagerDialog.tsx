@@ -91,7 +91,7 @@ export default function PlaceManagerDialog({
       }
       actions={
         <button type="button" className="action-btn" onClick={onClose}>
-          {t('generic.cancel')}
+          {t('generic.done')}
         </button>
       }
     >

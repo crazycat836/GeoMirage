@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { MoreVertical } from 'lucide-react'
 import { ICON_SIZE } from '../../lib/icons'
 import { focusFirstMenuItem, handleMenuArrowKeys } from '../../lib/menu-keys'
+import { useEscLayer } from '../../hooks/useModalDismiss'
 
 type Side = 'top' | 'bottom'
 type Align = 'start' | 'end'
@@ -79,20 +80,17 @@ export default function KebabMenu({
       if (triggerRef.current?.contains(target)) return
       close()
     }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        close()
-        ;(triggerRef.current as HTMLElement | null)?.focus()
-      }
-    }
     document.addEventListener('pointerdown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('pointerdown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
+    return () => document.removeEventListener('pointerdown', onDown)
   }, [open, close])
+
+  // Esc goes through the shared layer stack so it closes only this menu,
+  // not the dialog / drawer / settings popover it was opened from.
+  const closeFromKeyboard = useCallback(() => {
+    close()
+    triggerRef.current?.focus()
+  }, [close])
+  useEscLayer(open, closeFromKeyboard)
 
   // Focus first actionable item when opening.
   useEffect(() => {

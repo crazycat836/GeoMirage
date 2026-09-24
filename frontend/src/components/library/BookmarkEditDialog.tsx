@@ -61,6 +61,16 @@ function formatCoord(n: number): string {
   return n.toFixed(6).replace(/\.?0+$/, '')
 }
 
+interface FormSnapshot {
+  name: string
+  useCurrent: boolean
+  latStr: string
+  lngStr: string
+  placeId: string
+  tagIds: string[]
+  note: string
+}
+
 // Unified Add / Edit bookmark dialog.
 // - In create mode with a live position, the "Use current position" toggle
 //   is ON by default so the coordinate fields lock to live lat/lng.
@@ -82,6 +92,8 @@ export default function BookmarkEditDialog(props: Props) {
   const [placeId, setPlaceId] = useState<string>(firstPlace)
   const [tagIds, setTagIds] = useState<string[]>([])
   const [note, setNote] = useState('')
+  // The form as it was on open; any difference means unsaved input.
+  const [openedWith, setOpenedWith] = useState<FormSnapshot | null>(null)
 
   const nameRef = useRef<HTMLInputElement>(null)
   const wasOpenRef = useRef(false)
@@ -96,33 +108,45 @@ export default function BookmarkEditDialog(props: Props) {
   useEffect(() => {
     if (open && !wasOpenRef.current) {
       wasOpenRef.current = true
+      let form: FormSnapshot
       if (initial) {
-        setName(initial.name)
-        setUseCurrent(false)
-        setLatStr(formatCoord(initial.lat))
-        setLngStr(formatCoord(initial.lng))
-        setPlaceId(initial.placeId || firstPlace)
-        setTagIds([...initial.tagIds])
-        setNote(initial.note ?? '')
-        prevUseCurrentRef.current = false
+        form = {
+          name: initial.name,
+          useCurrent: false,
+          latStr: formatCoord(initial.lat),
+          lngStr: formatCoord(initial.lng),
+          placeId: initial.placeId || firstPlace,
+          tagIds: [...initial.tagIds],
+          note: initial.note ?? '',
+        }
       } else {
-        setName('')
+        const base = { name: '', placeId: firstPlace, tagIds: [], note: '' }
         if (initialCoordinates) {
-          setUseCurrent(false)
-          setLatStr(formatCoord(initialCoordinates.lat))
-          setLngStr(formatCoord(initialCoordinates.lng))
-          prevUseCurrentRef.current = false
+          form = {
+            ...base,
+            useCurrent: false,
+            latStr: formatCoord(initialCoordinates.lat),
+            lngStr: formatCoord(initialCoordinates.lng),
+          }
         } else {
           const canUseCurrent = !!currentPosition
-          setUseCurrent(canUseCurrent)
-          setLatStr(canUseCurrent ? formatCoord(currentPosition!.lat) : '')
-          setLngStr(canUseCurrent ? formatCoord(currentPosition!.lng) : '')
-          prevUseCurrentRef.current = canUseCurrent
+          form = {
+            ...base,
+            useCurrent: canUseCurrent,
+            latStr: canUseCurrent ? formatCoord(currentPosition!.lat) : '',
+            lngStr: canUseCurrent ? formatCoord(currentPosition!.lng) : '',
+          }
         }
-        setPlaceId(firstPlace)
-        setTagIds([])
-        setNote('')
       }
+      setName(form.name)
+      setUseCurrent(form.useCurrent)
+      setLatStr(form.latStr)
+      setLngStr(form.lngStr)
+      setPlaceId(form.placeId)
+      setTagIds(form.tagIds)
+      setNote(form.note)
+      setOpenedWith(form)
+      prevUseCurrentRef.current = form.useCurrent
       const f = setTimeout(() => nameRef.current?.focus(), 60)
       return () => clearTimeout(f)
     }
@@ -149,6 +173,16 @@ export default function BookmarkEditDialog(props: Props) {
   const lngValid = Number.isFinite(effectiveLng) && effectiveLng >= -180 && effectiveLng <= 180
   const canSubmit = name.trim().length > 0 && latValid && lngValid
 
+  const dirty = openedWith != null && (
+    name !== openedWith.name
+    || useCurrent !== openedWith.useCurrent
+    || latStr !== openedWith.latStr
+    || lngStr !== openedWith.lngStr
+    || placeId !== openedWith.placeId
+    || note !== openedWith.note
+    || tagIds.join('\n') !== openedWith.tagIds.join('\n')
+  )
+
   const toggleTag = useCallback((tagId: string) => {
     setTagIds((prev) =>
       prev.includes(tagId) ? prev.filter((t) => t !== tagId) : [...prev, tagId],
@@ -174,6 +208,9 @@ export default function BookmarkEditDialog(props: Props) {
     <Modal
       open={open}
       onClose={onClose}
+      // A stray click outside must not throw away typed input; Cancel and
+      // Esc still close it.
+      closeOnBackdropClick={!dirty}
       ariaLabel={typeof title === 'string' ? title : undefined}
       dataFc="modal.bookmark-edit"
       dialogStyle={{ width: 380 }}

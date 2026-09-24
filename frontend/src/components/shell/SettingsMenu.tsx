@@ -15,6 +15,7 @@ import { useDeviceContext } from '../../contexts/DeviceContext'
 import { useAvatarContext } from '../../contexts/AvatarContext'
 import { useToastContext } from '../../contexts/ToastContext'
 import { useFocusTrap } from '../../hooks/useFocusTrap'
+import { useEscLayer } from '../../hooks/useModalDismiss'
 import { useI18n, useT, type Lang } from '../../i18n'
 import AvatarPicker from './AvatarPicker'
 import SetInitialPositionDialog from './SetInitialPositionDialog'
@@ -152,14 +153,14 @@ export default function SettingsMenu({ open, onClose, layerKey, onLayerChange }:
         onClose()
       }
     }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('pointerdown', handler)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('pointerdown', handler)
-      document.removeEventListener('keydown', onKey)
-    }
+    return () => document.removeEventListener('pointerdown', handler)
   }, [open, onClose])
+
+  // Esc through the shared layer stack: an open language / map-layer /
+  // search-provider menu or the avatar picker sits above this popover and
+  // takes the first Esc.
+  useEscLayer(open, onClose)
 
   // Keyboard accessibility: trap Tab focus inside the popover, move focus in
   // on open, and restore it to the trigger on close. The trap releases while

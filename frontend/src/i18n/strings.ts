@@ -8,6 +8,7 @@ export const STRINGS = {
   'generic.save': { zh: '儲存', en: 'Save' },
   'generic.sort': { zh: '排序', en: 'Sort' },
   'generic.cancel': { zh: '取消', en: 'Cancel' },
+  'generic.done': { zh: '完成', en: 'Done' },
   'generic.delete': { zh: '刪除', en: 'Delete' },
   'generic.rename': { zh: '重新命名', en: 'Rename' },
   'generic.confirm': { zh: '確定', en: 'OK' },

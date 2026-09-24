@@ -8,6 +8,9 @@ import { usePcLocation, type PcLocationErrorCode } from '../../hooks/usePcLocati
 import { useSimActions, useSimState } from '../../contexts/SimContext'
 import { useSimDerived } from '../../contexts/SimDerivedContext'
 import { useT } from '../../i18n'
+import { useModalDismiss } from '../../hooks/useModalDismiss'
+import { useFocusTrap } from '../../hooks/useFocusTrap'
+import { useInitialFocus } from '../../hooks/useInitialFocus'
 
 interface LocatePcButtonProps {
   /** Pan the map camera to a coordinate without touching the virtual GPS. */
@@ -88,21 +91,23 @@ export default function LocatePcButton({ onFlyToCoordinate, onPcLocated }: Locat
       if (pendingTeleport) return
       closePopover()
     }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !pendingTeleport) closePopover()
-    }
     const tid = setTimeout(() => {
       document.addEventListener('pointerdown', onDown)
-      document.addEventListener('keydown', onKey)
     }, 0)
     window.addEventListener('resize', reposition)
     return () => {
       clearTimeout(tid)
       document.removeEventListener('pointerdown', onDown)
-      document.removeEventListener('keydown', onKey)
       window.removeEventListener('resize', reposition)
     }
   }, [open, closePopover, pendingTeleport])
+
+  // Esc on the shared layer stack (the teleport ConfirmDialog sits above
+  // and takes the first Esc), focus moves in on open, Tab stays inside, and
+  // focus returns to the trigger on close.
+  useModalDismiss({ open, onDismiss: closePopover })
+  useFocusTrap(panelRef, open)
+  useInitialFocus(open, panelRef)
 
   const handleFlyOnly = useCallback(() => {
     if (!coord) return
