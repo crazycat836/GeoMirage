@@ -19,8 +19,8 @@ A single instance is constructed in ``main.py`` and parked on
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
+import threading
 import time
 from typing import TYPE_CHECKING
 
@@ -32,12 +32,16 @@ from services.coord_format import CoordinateFormatter
 from services.cooldown import CooldownTimer
 from services.gpx_service import GpxService
 from services.route_service import RouteService
+from services.json_safe import safe_load_json, safe_write_json
 from services.saved_routes import SavedRoutesStore
 
 if TYPE_CHECKING:
     from core.simulation_engine import SimulationEngine
 
 logger = logging.getLogger("geomirage")
+
+# One writer at a time for settings.json (see AppState.save_settings).
+_SETTINGS_WRITE_LOCK = threading.Lock()
 
 
 class AppState:
@@ -93,41 +97,48 @@ class AppState:
         self._load_settings()
 
     def _load_settings(self):
-        if SETTINGS_FILE.exists():
-            try:
-                data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
-                pos = data.get("last_position")
-                if pos:
-                    self._last_position = pos
-                fmt = data.get("coord_format")
-                if fmt:
-                    from models.schemas import CoordinateFormat
-                    self.coord_formatter.format = CoordinateFormat(fmt)
-                imp = data.get("initial_map_position")
-                if isinstance(imp, dict) and "lat" in imp and "lng" in imp:
-                    self._initial_map_position = {"lat": float(imp["lat"]), "lng": float(imp["lng"])}
-                self._wifi_keepalive = bool(data.get("wifi_keepalive", False))
-            except (json.JSONDecodeError, OSError, ValueError, KeyError):
-                logger.warning("Settings file malformed or unreadable; using defaults", exc_info=True)
+        # safe_load_json moves an unparseable (e.g. half-written) or
+        # non-object (e.g. ``null``) file to ``settings.json.bak-<ts>``
+        # and returns None, so we start from defaults.
+        data = safe_load_json(SETTINGS_FILE, expect=dict)
+        if data is None:
+            return
+        try:
+            pos = data.get("last_position")
+            if pos:
+                self._last_position = pos
+            fmt = data.get("coord_format")
+            if fmt:
+                from models.schemas import CoordinateFormat
+                self.coord_formatter.format = CoordinateFormat(fmt)
+            imp = data.get("initial_map_position")
+            if isinstance(imp, dict) and "lat" in imp and "lng" in imp:
+                self._initial_map_position = {"lat": float(imp["lat"]), "lng": float(imp["lng"])}
+            self._wifi_keepalive = bool(data.get("wifi_keepalive", False))
+        except (TypeError, ValueError, KeyError):
+            logger.warning("Settings file malformed; using defaults", exc_info=True)
 
     def save_settings(self) -> bool:
         """Persist settings to disk. Returns False when the write failed
         (the settings PUT routes map that to a 500
         ``settings_persist_failed`` envelope instead of lying with a 200
         while the write evaporated). Best-effort callers (throttled
-        position saves, shutdown flush) may ignore the result."""
-        data = {
-            "last_position": self._last_position,
-            "coord_format": self.coord_formatter.format.value,
-            "initial_map_position": self._initial_map_position,
-            "wifi_keepalive": self._wifi_keepalive,
-        }
-        try:
-            SETTINGS_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        except Exception:
-            logger.exception("Failed to save settings to %s", SETTINGS_FILE)
-            return False
-        return True
+        position saves, shutdown flush) may ignore the result.
+
+        Goes through ``safe_write_json`` (0600 temp file + atomic
+        replace, so a symlinked settings.json is replaced rather than
+        followed, then chown back to the sudo invoker). The lock
+        serialises the event-loop throttled save and the settings PUTs
+        that run on worker threads.
+        """
+        with _SETTINGS_WRITE_LOCK:
+            data = {
+                "last_position": self._last_position,
+                "coord_format": self.coord_formatter.format.value,
+                "initial_map_position": self._initial_map_position,
+                "wifi_keepalive": self._wifi_keepalive,
+            }
+            return safe_write_json(SETTINGS_FILE, data)
 
     def get_initial_position(self) -> dict:
         if self._last_position:

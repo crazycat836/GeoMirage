@@ -20,7 +20,7 @@ import os
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 logger = logging.getLogger(__name__)
 
@@ -56,19 +56,50 @@ def chown_back(path: Path) -> None:
     if target is None:
         return
     try:
-        os.chown(path, *target)
+        # Never follow a symlink: a same-user process could point the
+        # entry at a root-owned system file and have root hand it over.
+        os.chown(path, *target, follow_symlinks=False)
     except OSError as exc:
         logger.warning("chown %s -> %s failed: %s", path.name, target, exc)
 
 
-def safe_load_json(path: Path) -> Any | None:
+def open_private_append(path: Path) -> TextIO:
+    """Open *path* for text append as a private (0600) file.
+
+    For log-style writers (``backend.log``, usage JSONL) that can't use
+    the temp-file + replace pattern. ``O_NOFOLLOW`` makes the open fail
+    (``OSError``) when *path* is a symlink, so a root backend never
+    appends to whatever the link points at. A pre-existing file is
+    tightened to 0600 and, under sudo, handed back to the invoking user.
+    """
+    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags, 0o600)
+    try:
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, 0o600)
+        target = _sudo_target()
+        if target is not None:
+            os.fchown(fd, *target)
+    except OSError as exc:
+        # Permission tightening is best-effort; the append itself works.
+        logger.warning("cannot restrict %s: %s", path.name, exc)
+    try:
+        return os.fdopen(fd, "a", encoding="utf-8")
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def safe_load_json(path: Path, *, expect: type | None = None) -> Any | None:
     """Load JSON from *path*.
 
     Returns the parsed payload, or ``None`` if the file is missing,
     unreadable, or contains invalid JSON. Only ``json.JSONDecodeError``
-    triggers the ``<name>.bak-<timestamp>`` quarantine; filesystem-level
-    read failures (missing file, permission denied, disk error) pass
-    through as ``None`` without moving anything aside.
+    (or, when *expect* is given, a top-level value that isn't an
+    instance of it, e.g. ``null``) triggers the
+    ``<name>.bak-<timestamp>`` quarantine; filesystem-level read
+    failures (missing file, permission denied, disk error) pass through
+    as ``None`` without moving anything aside.
     """
     try:
         text = path.read_text(encoding="utf-8")
@@ -78,10 +109,16 @@ def safe_load_json(path: Path) -> Any | None:
         logger.error("cannot read %s: %s: %s", path.name, type(exc).__name__, exc)
         return None
     try:
-        return json.loads(text)
+        data = json.loads(text)
     except json.JSONDecodeError as exc:
         _backup_corrupt(path, reason=f"{type(exc).__name__}: {exc}")
         return None
+    if expect is not None and not isinstance(data, expect):
+        _backup_corrupt(
+            path, reason=f"expected {expect.__name__}, got {type(data).__name__}",
+        )
+        return None
+    return data
 
 
 def safe_write_json(path: Path, payload: Any, *, indent: int = 2) -> bool:

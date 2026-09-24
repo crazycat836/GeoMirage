@@ -24,6 +24,8 @@ from pathlib import Path
 
 import uvicorn
 
+from services.json_safe import open_private_append
+
 
 _LOG_PREFIX_FMT = "%(asctime)s %(levelname)s %(name)s:"
 _LOG_FMT = f"{_LOG_PREFIX_FMT} %(message)s"
@@ -101,6 +103,16 @@ class _UvicornAccessFormatter(uvicorn.logging.AccessFormatter):
         return super().formatMessage(recordcopy)
 
 
+class _PrivateRotatingFileHandler(RotatingFileHandler):
+    """RotatingFileHandler whose file is 0600, refuses to follow a
+    symlink, and belongs to the sudo invoker when the backend runs as
+    root. Rollover reopens through ``_open`` too, so a new
+    ``backend.log`` after rotation gets the same treatment."""
+
+    def _open(self):
+        return open_private_append(Path(self.baseFilename))
+
+
 class _AccessNoiseFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()
@@ -159,9 +171,10 @@ def setup_logging(log_dir: Path) -> logging.Logger:
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(_ColorFormatter(_LOG_FMT, datefmt=_LOG_DATEFMT))
 
+    file_error: Exception | None = None
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
-        file_handler = RotatingFileHandler(
+        file_handler = _PrivateRotatingFileHandler(
             log_dir / "backend.log",
             maxBytes=_FILE_MAX_BYTES,
             backupCount=_FILE_BACKUP_COUNT,
@@ -170,10 +183,18 @@ def setup_logging(log_dir: Path) -> logging.Logger:
         file_handler.setFormatter(logging.Formatter(_LOG_FMT, datefmt=_LOG_DATEFMT))
         file_handler.setLevel(logging.INFO)
         handlers: list[logging.Handler] = [console_handler, file_handler]
-    except Exception:
+    except Exception as exc:
+        # e.g. backend.log is a symlink (O_NOFOLLOW → ELOOP) or not writable.
+        file_error = exc
         handlers = [console_handler]
 
     logging.basicConfig(level=logging.INFO, handlers=handlers, force=True)
     logging.getLogger("uvicorn.access").addFilter(_AccessNoiseFilter())
 
-    return logging.getLogger("geomirage")
+    project_logger = logging.getLogger("geomirage")
+    if file_error is not None:
+        project_logger.warning(
+            "File logging disabled, cannot open %s: %s",
+            log_dir / "backend.log", file_error,
+        )
+    return project_logger

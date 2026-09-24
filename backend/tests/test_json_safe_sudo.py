@@ -104,3 +104,61 @@ def test_chown_failure_does_not_break_write(tmp_path: Path, monkeypatch) -> None
     assert ok
     assert target.exists()
     assert target.read_text(encoding="utf-8").strip().startswith("{")
+
+
+# ── open_private_append (backend.log / usage JSONL) ──
+
+
+def test_chown_back_does_not_follow_symlinks(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    monkeypatch.setenv("SUDO_UID", "501")
+    monkeypatch.setenv("SUDO_GID", "20")
+    link = tmp_path / "link"
+    link.symlink_to(tmp_path / "elsewhere")
+
+    with patch.object(os, "chown") as mock_chown:
+        json_safe.chown_back(link)
+
+    assert mock_chown.call_args.kwargs == {"follow_symlinks": False}
+
+
+def test_open_private_append_creates_0600(tmp_path: Path) -> None:
+    target = tmp_path / "backend.log"
+    with json_safe.open_private_append(target) as fh:
+        fh.write("line\n")
+    assert target.read_text(encoding="utf-8") == "line\n"
+    assert (target.stat().st_mode & 0o777) == 0o600
+
+
+def test_open_private_append_tightens_existing_file(tmp_path: Path) -> None:
+    target = tmp_path / "backend.log"
+    target.write_text("old\n", encoding="utf-8")
+    target.chmod(0o644)
+    with json_safe.open_private_append(target) as fh:
+        fh.write("new\n")
+    assert target.read_text(encoding="utf-8") == "old\nnew\n"
+    assert (target.stat().st_mode & 0o777) == 0o600
+
+
+def test_open_private_append_refuses_symlink(tmp_path: Path) -> None:
+    import pytest
+
+    victim = tmp_path / "victim"
+    victim.write_text("keep", encoding="utf-8")
+    link = tmp_path / "backend.log"
+    link.symlink_to(victim)
+
+    with pytest.raises(OSError):
+        json_safe.open_private_append(link)
+    assert victim.read_text(encoding="utf-8") == "keep"
+
+
+def test_open_private_append_chowns_fd_under_sudo(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    monkeypatch.setenv("SUDO_UID", "501")
+    monkeypatch.setenv("SUDO_GID", "20")
+
+    with patch.object(os, "fchown") as mock_fchown:
+        json_safe.open_private_append(tmp_path / "usage.jsonl").close()
+
+    assert mock_fchown.call_args.args[1:] == (501, 20)

@@ -71,3 +71,22 @@ def test_events_endpoint_appends(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert res.json() == {"written": 1}
     (written,) = tmp_path.glob("usage-*.jsonl")
     assert json.loads(written.read_text("utf-8"))["label"] == "Start"
+
+
+def test_append_refuses_symlinked_file(tmp_path: Path) -> None:
+    victim = tmp_path / "victim"
+    victim.write_text("keep", encoding="utf-8")
+    usage_dir = tmp_path / "usage"
+    usage_dir.mkdir()
+    when = datetime(2026, 9, 14, 12, 0)
+    (usage_dir / "usage-2026-09.jsonl").symlink_to(victim)
+
+    assert UsageLog(usage_dir).append([{"type": "click"}], now=when) == 0
+    assert victim.read_text(encoding="utf-8") == "keep"
+
+
+def test_append_file_is_private(tmp_path: Path) -> None:
+    log = UsageLog(tmp_path / "usage")
+    when = datetime(2026, 9, 14, 12, 0)
+    log.append([{"type": "click"}], now=when)
+    assert (log.path_for(when).stat().st_mode & 0o777) == 0o600

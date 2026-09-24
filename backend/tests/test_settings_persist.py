@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import stat
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 from fastapi import HTTPException
@@ -31,6 +33,7 @@ from api.location.settings import (  # noqa: E402
 )
 from context import ctx  # noqa: E402
 from models.schemas import CoordFormatRequest, CoordinateFormat  # noqa: E402
+from services import json_safe  # noqa: E402
 from services.coord_format import CoordinateFormatter  # noqa: E402
 from state import AppState  # noqa: E402
 
@@ -49,16 +52,15 @@ def _bare_state() -> AppState:
     return st
 
 
-class _ExplodingPath:
-    def write_text(self, *args, **kwargs):
-        raise OSError("disk full")
+def _unwritable_settings_path(tmp_path: Path) -> Path:
+    """A settings path whose parent is a regular file, so every write fails."""
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("", encoding="utf-8")
+    return blocker / "settings.json"
 
-    def __str__(self) -> str:  # logger interpolates the target path
-        return "<exploding settings.json>"
 
-
-def test_save_settings_returns_false_when_write_fails(monkeypatch):
-    monkeypatch.setattr(state_mod, "SETTINGS_FILE", _ExplodingPath())
+def test_save_settings_returns_false_when_write_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(state_mod, "SETTINGS_FILE", _unwritable_settings_path(tmp_path))
 
     assert _bare_state().save_settings() is False
 
@@ -73,8 +75,8 @@ def test_save_settings_returns_true_and_persists_on_success(tmp_path, monkeypatc
     assert json.loads(target.read_text(encoding="utf-8"))["wifi_keepalive"] is False
 
 
-def test_set_wifi_keepalive_propagates_persist_failure(monkeypatch):
-    monkeypatch.setattr(state_mod, "SETTINGS_FILE", _ExplodingPath())
+def test_set_wifi_keepalive_propagates_persist_failure(tmp_path, monkeypatch):
+    monkeypatch.setattr(state_mod, "SETTINGS_FILE", _unwritable_settings_path(tmp_path))
     st = _bare_state()
 
     assert st.set_wifi_keepalive(True) is False
@@ -148,3 +150,66 @@ def test_settings_persist_failed_is_a_registered_error_code():
     from api._errors import ErrorCode
 
     assert ErrorCode.SETTINGS_PERSIST_FAILED.value == "settings_persist_failed"
+
+
+# ── settings.json file handling (atomic, private, no symlink follow) ──
+
+
+def test_settings_round_trip_is_private(tmp_path, monkeypatch):
+    target = tmp_path / "settings.json"
+    monkeypatch.setattr(state_mod, "SETTINGS_FILE", target)
+    st = _bare_state()
+    st._last_position = {"lat": 25.0, "lng": 121.5}
+    st._initial_map_position = {"lat": 1.0, "lng": 2.0}
+    st._wifi_keepalive = True
+    st.coord_formatter.format = CoordinateFormat.DMS
+
+    assert st.save_settings() is True
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+
+    loaded = _bare_state()
+    loaded._load_settings()
+    assert loaded._last_position == {"lat": 25.0, "lng": 121.5}
+    assert loaded._initial_map_position == {"lat": 1.0, "lng": 2.0}
+    assert loaded._wifi_keepalive is True
+    assert loaded.coord_formatter.format == CoordinateFormat.DMS
+
+
+def test_save_settings_replaces_symlink_instead_of_following(tmp_path, monkeypatch):
+    victim = tmp_path / "victim.txt"
+    victim.write_text("do not touch", encoding="utf-8")
+    target = tmp_path / "settings.json"
+    target.symlink_to(victim)
+    monkeypatch.setattr(state_mod, "SETTINGS_FILE", target)
+
+    assert _bare_state().save_settings() is True
+
+    assert victim.read_text(encoding="utf-8") == "do not touch"
+    assert not target.is_symlink()
+    assert json.loads(target.read_text(encoding="utf-8"))["wifi_keepalive"] is False
+
+
+def test_save_settings_hands_file_back_to_sudo_invoker(tmp_path, monkeypatch):
+    target = tmp_path / "settings.json"
+    monkeypatch.setattr(state_mod, "SETTINGS_FILE", target)
+
+    with patch.object(json_safe, "chown_back") as mock_chown_back:
+        assert _bare_state().save_settings() is True
+
+    mock_chown_back.assert_any_call(target)
+
+
+@pytest.mark.parametrize("body", ["null", "[1, 2]", '{"last_position": {"lat": 1'])
+def test_load_settings_falls_back_and_keeps_backup(tmp_path, monkeypatch, body):
+    target = tmp_path / "settings.json"
+    target.write_text(body, encoding="utf-8")
+    monkeypatch.setattr(state_mod, "SETTINGS_FILE", target)
+
+    st = _bare_state()
+    st._load_settings()  # must not raise
+
+    assert st._last_position is None
+    assert st._wifi_keepalive is False
+    backups = list(tmp_path.glob("settings.json.bak-*"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == body
