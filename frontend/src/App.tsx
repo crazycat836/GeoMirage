@@ -411,7 +411,7 @@ function AppShell() {
           showWaypointOption={sim.mode === SimMode.Loop || sim.mode === SimMode.MultiStop || sim.mode === SimMode.Flower}
           onSaveRoute={() => setSaveRouteOpen(true)}
           showSaveRouteOption={sim.waypoints.length > 0}
-          deviceConnected={device.connectedDevice !== null}
+          deviceConnected={health.canOperate}
           onOpenDevices={openDevicesPanel}
           onShowToast={toast.showToast}
           layerKey={layerKey}
