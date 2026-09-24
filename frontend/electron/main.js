@@ -219,7 +219,10 @@ async function createWindow() {
     return { action: 'deny' }
   })
 
-  const isDev = process.argv.includes('--dev') || !app.isPackaged
+  // Only an unpackaged run loads the dev server. A packaged build ignores
+  // `--dev`, so whatever holds port 5173 can't serve the UI (and receive
+  // the session token) there.
+  const isDev = !app.isPackaged
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173')
   } else {
