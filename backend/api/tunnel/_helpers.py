@@ -26,6 +26,7 @@ from api._errors import ErrorCode, http_err
 from core.device_utils import (  # noqa: F401  (re-exported for existing importers)
     purge_stale_remote_pair_record,
 )
+from core.device_manager import DeviceAlreadyConnectedError
 from services import connection_state
 
 _tunnel_logger = logging.getLogger("wifi_tunnel")
@@ -233,7 +234,21 @@ async def connect_device_over_tunnel(rsd_address: str, rsd_port: int) -> dict:
     start-and-connect route merges ``rsd_address``/``rsd_port`` into the result.
     """
     dm = get_device_manager()
-    info = await dm.connect_wifi_tunnel(rsd_address, rsd_port)
+    try:
+        info = await dm.connect_wifi_tunnel(rsd_address, rsd_port)
+    except DeviceAlreadyConnectedError as exc:
+        # The phone is already connected (typically over USB, maybe mid
+        # navigation). Stop its engine before closing that transport so
+        # the running task can't hit the closed channel and mark the
+        # device DEGRADED, then connect again over the tunnel.
+        _tunnel_logger.info(
+            "Replacing the existing connection of %s with the WiFi tunnel",
+            exc.udid,
+        )
+        await connection_state.teardown_device(
+            get_app_state(), exc.udid, cause="replaced_by_wifi_tunnel",
+        )
+        info = await dm.connect_wifi_tunnel(rsd_address, rsd_port)
     await connection_state.announce_connected(
         info.udid, name=info.name, ios_version=info.ios_version,
         connection_type="Network", cause="wifi_tunnel",

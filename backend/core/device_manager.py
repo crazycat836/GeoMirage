@@ -67,6 +67,17 @@ async def _close_quietly(lockdown: object, udid: str) -> None:
         logger.debug("Error closing lockdown for %s", udid, exc_info=True)
 
 
+class DeviceAlreadyConnectedError(RuntimeError):
+    """``connect_wifi_tunnel`` reached a device that already has a
+    connection record. The new RSD has been closed; the caller decides
+    whether to tear the existing connection down (engine first) and
+    connect again."""
+
+    def __init__(self, udid: str) -> None:
+        super().__init__(f"Device {udid} is already connected")
+        self.udid = udid
+
+
 @dataclass
 class _ActiveConnection:
     """Internal bookkeeping for a single connected device."""
@@ -643,9 +654,6 @@ class DeviceManager:
         ios_version_str = props.get("OSVersion", "0.0")
         device_name = props.get("DeviceClass", "iPhone")
 
-        if udid in self._connections:
-            await self.disconnect(udid)
-
         conn = _ActiveConnection(
             udid=udid,
             lockdown=rsd,
@@ -655,8 +663,21 @@ class DeviceManager:
             via_tunnel=True,
         )
 
+        # Check-then-set under the lock, as in connect(): an existing
+        # record wins and this RSD is closed. Replacing a live connection
+        # needs its engine stopped first, which is the orchestration
+        # layer's job, so the caller gets DeviceAlreadyConnectedError.
         async with self._lock:
-            self._connections[udid] = conn
+            duplicate = udid in self._connections
+            if not duplicate:
+                self._connections[udid] = conn
+        if duplicate:
+            logger.info(
+                "WiFi tunnel reached %s, which is already connected; "
+                "closing the new RSD", udid,
+            )
+            await self._close_connection(udid, conn)
+            raise DeviceAlreadyConnectedError(udid)
         self._invalidate_discover_cache()
 
         logger.info("WiFi tunnel connected to %s (iOS %s)", udid, ios_version_str)
