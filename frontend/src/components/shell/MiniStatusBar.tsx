@@ -11,7 +11,7 @@ import WeatherChip from './WeatherChip'
 import { DEVICE_COLORS, DEVICE_LETTERS } from '../../lib/constants'
 import type { DeviceInfo } from '../../hooks/useDevice'
 import { copyToClipboard } from '../../lib/clipboard'
-import { formatCoord } from '../../lib/format'
+import { formatCardinalAxis, formatCoord } from '../../lib/format'
 
 export default function MiniStatusBar() {
   const t = useT()
@@ -216,16 +216,16 @@ function LivePosCard({
 
       {hasPos ? (
         <div className="lp-coords">
-          <div className="lp-coord-row">
-            <span className="axis">LAT</span>
-            <span className="val tabular-nums">{currentPos!.lat.toFixed(6)}</span>
-            <span className="unit">°N</span>
-          </div>
-          <div className="lp-coord-row">
-            <span className="axis">LNG</span>
-            <span className="val tabular-nums">{currentPos!.lng.toFixed(6)}</span>
-            <span className="unit">°E</span>
-          </div>
+          {(['lat', 'lng'] as const).map((axis) => {
+            const { value, hemisphere } = formatCardinalAxis(currentPos![axis], axis, 6)
+            return (
+              <div key={axis} className="lp-coord-row">
+                <span className="axis">{axis === 'lat' ? 'LAT' : 'LNG'}</span>
+                <span className="val tabular-nums">{value}</span>
+                <span className="unit">°{hemisphere}</span>
+              </div>
+            )
+          })}
         </div>
       ) : (
         <div className="lp-no-pos">

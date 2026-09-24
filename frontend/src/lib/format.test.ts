@@ -4,6 +4,7 @@ import {
   coordKey,
   formatCoord,
   formatCoordCardinal,
+  formatCardinalAxis,
   formatCoordDegrees,
   formatCooldownS,
   formatCountdown,
@@ -143,5 +144,18 @@ describe('formatCooldownS', () => {
       expect(formatCooldownS(secs, tZh)).not.toMatch(ENGLISH_UNIT)
     }
     expect(formatCooldownS(30, tZh)).toBe('30 秒')
+  })
+})
+
+describe('formatCardinalAxis', () => {
+  test('splits value and hemisphere for each axis sign', () => {
+    expect(formatCardinalAxis(-33.8688, 'lat', 6)).toEqual({ value: '33.868800', hemisphere: 'S' })
+    expect(formatCardinalAxis(25.033, 'lat', 6)).toEqual({ value: '25.033000', hemisphere: 'N' })
+    expect(formatCardinalAxis(-74.006, 'lng', 6)).toEqual({ value: '74.006000', hemisphere: 'W' })
+    expect(formatCardinalAxis(151.2093, 'lng', 6)).toEqual({ value: '151.209300', hemisphere: 'E' })
+  })
+
+  test('a value that rounds to zero reads N / E', () => {
+    expect(formatCardinalAxis(-0.0000001, 'lat', 6)).toEqual({ value: '0.000000', hemisphere: 'N' })
   })
 })

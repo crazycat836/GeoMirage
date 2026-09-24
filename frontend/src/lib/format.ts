@@ -15,16 +15,26 @@ export function formatCoord(c: LatLng, precision = 6): string {
   return `${c.lat.toFixed(precision)}, ${c.lng.toFixed(precision)}`
 }
 
+/** One axis of a cardinal coordinate, split for layouts that style the
+ *  number and the hemisphere separately: -33.8688 lat → "33.868800", "S". */
+export function formatCardinalAxis(
+  v: number,
+  axis: 'lat' | 'lng',
+  precision = 5,
+): { value: string; hemisphere: 'N' | 'S' | 'E' | 'W' } {
+  // Sign is taken from the rounded value so a coordinate that prints as
+  // 0.00000 never reads "°S" / "°W" (-0 >= 0 is true).
+  const r = Number(v.toFixed(precision))
+  const hemisphere = axis === 'lat' ? (r >= 0 ? 'N' : 'S') : (r >= 0 ? 'E' : 'W')
+  return { value: Math.abs(r).toFixed(precision), hemisphere }
+}
+
 /** "25.03300°N · 121.56540°E" — dock/waypoint cardinal style. Negative
  *  latitudes read °S and negative longitudes °W, as absolute values. */
 export function formatCoordCardinal(c: LatLng, precision = 5): string {
-  // Sign is taken from the rounded value so a coordinate that prints as
-  // 0.00000 never reads "°S" / "°W" (-0 >= 0 is true).
-  const hemi = (v: number, pos: string, neg: string) => {
-    const r = Number(v.toFixed(precision))
-    return `${Math.abs(r).toFixed(precision)}°${r >= 0 ? pos : neg}`
-  }
-  return `${hemi(c.lat, 'N', 'S')} · ${hemi(c.lng, 'E', 'W')}`
+  const lat = formatCardinalAxis(c.lat, 'lat', precision)
+  const lng = formatCardinalAxis(c.lng, 'lng', precision)
+  return `${lat.value}°${lat.hemisphere} · ${lng.value}°${lng.hemisphere}`
 }
 
 /** "25.033000°, 121.565400°" — degree-suffixed list-row style. */
