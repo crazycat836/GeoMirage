@@ -494,7 +494,7 @@ def test_probe_skipped_for_legacy_location_service():
 # the SSoT + WS observer fire together. Tests below pin the contract.
 
 
-def _install_dm_with_type(udid: str, conn_type: str):
+def _install_dm_with_type(udid: str, conn_type: str, *, via_tunnel: bool = True):
     """Wire a fake DM whose ``get_connection_type`` returns *conn_type*.
 
     Sets up a benign DVT mock (``_ensure_instrument`` succeeds) so the
@@ -516,6 +516,9 @@ def _install_dm_with_type(udid: str, conn_type: str):
     dm = MagicMock()
     dm.get_connection = MagicMock(return_value=conn)
     dm.get_connection_type = MagicMock(return_value=conn_type)
+    dm.is_via_wifi_tunnel = MagicMock(
+        return_value=conn_type == "Network" and via_tunnel,
+    )
     dm.disconnect = AsyncMock()
 
     ctx.app_state.device_manager = dm
@@ -555,6 +558,55 @@ def test_dead_wifi_tunnel_marks_device_disconnected(monkeypatch):
     assert final_state == DeviceState.DISCONNECTED, (
         f"expected DISCONNECTED when WiFi tunnel is down, got {final_state}"
     )
+
+
+def _usbmux_network_scenario(monkeypatch, listed: list[str]):
+    """usbmux Network device (Finder Wi-Fi sync, no in-process tunnel),
+    in-process tunnel not running, usbmux listing *listed* as Network.
+    Returns the device's state after a WS (re)connect probe."""
+    from api.websocket import _send_initial_state
+    from services.connection_state import store, DeviceState
+    from services import wifi_tunnel_service
+
+    _reset_debounce_dict()
+    monkeypatch.setattr(wifi_tunnel_service.tunnel, "task", None, raising=False)
+    monkeypatch.setattr(wifi_tunnel_service.tunnel, "info", None, raising=False)
+
+    class _FakeDev:
+        def __init__(self, serial):
+            self.serial = serial
+            self.connection_type = "Network"
+
+    async def _list():
+        return [_FakeDev(u) for u in listed]
+    import pymobiledevice3.usbmux as _usbmux_mod
+    monkeypatch.setattr(_usbmux_mod, "list_devices", _list, raising=True)
+
+    async def _run() -> DeviceState:
+        _install_dm_with_type("udid-A", "Network", via_tunnel=False)
+        await store.transition(
+            "udid-A", DeviceState.CONNECTED, cause="user",
+            metadata={"name": "A", "ios_version": "26.5", "connection_type": "Network"},
+        )
+        await _send_initial_state(_make_fake_ws())
+        await _wait_for_probe_tasks()
+        return store.get("udid-A")
+
+    return asyncio.run(_run())
+
+
+def test_usbmux_network_device_survives_ws_reconnect(monkeypatch):
+    """A usbmux Network connection has no in-process tunnel, so a
+    stopped TunnelRunner must not count as its transport dying."""
+    from services.connection_state import DeviceState
+
+    assert _usbmux_network_scenario(monkeypatch, ["udid-A"]) == DeviceState.CONNECTED
+
+
+def test_usbmux_network_device_gone_from_usbmux_disconnects(monkeypatch):
+    from services.connection_state import DeviceState
+
+    assert _usbmux_network_scenario(monkeypatch, []) == DeviceState.DISCONNECTED
 
 
 def test_dead_wifi_transport_marks_device_disconnected(monkeypatch):

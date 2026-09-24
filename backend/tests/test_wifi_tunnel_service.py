@@ -258,6 +258,34 @@ def test_cleanup_swallows_per_udid_failures(monkeypatch):
     assert disconnect_mock.await_count == 2
 
 
+def test_cleanup_skips_usbmux_network_devices(monkeypatch):
+    """Stopping the WiFi tunnel disconnects only the device that rides
+    it; a usbmux Network (Wi-Fi sync) device keeps its connection."""
+    from context import ctx
+    from core.device_manager import DeviceManager, _ActiveConnection
+    from services.wifi_tunnel_service import cleanup_wifi_connections
+
+    dm = DeviceManager()
+    dm._connections = {
+        "tunnel-A": _ActiveConnection(
+            udid="tunnel-A", lockdown=object(), ios_version="26.0",
+            connection_type="Network", via_tunnel=True,
+        ),
+        "usbmux-B": _ActiveConnection(
+            udid="usbmux-B", lockdown=object(), ios_version="26.0",
+            connection_type="Network",
+        ),
+    }
+    app_state = SimpleNamespace(device_manager=dm, terminate_engine=AsyncMock())
+    monkeypatch.setattr(ctx, "app_state", app_state, raising=False)
+
+    result = asyncio.run(cleanup_wifi_connections())
+
+    assert result == ["tunnel-A"]
+    assert dm.connected_udids == ["usbmux-B"]
+    app_state.terminate_engine.assert_awaited_once_with("tunnel-A")
+
+
 # ─── reconnect_usb_over_wifi metadata ────────────────────────────────
 
 

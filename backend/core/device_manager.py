@@ -84,6 +84,11 @@ class _ActiveConnection:
     # invalidated by the AMFI reveal endpoint so `/device/list` doesn't
     # pay a lockdown round-trip per device per poll.
     developer_mode_enabled: bool | None = None
+    # True when the connection rides the in-process WiFi TunnelRunner
+    # (connect_wifi_tunnel). A usbmux "Network" connection (Finder's
+    # Wi-Fi sync) has connection_type "Network" but its own CoreDevice
+    # tunnel, so the TunnelRunner's liveness says nothing about it.
+    via_tunnel: bool = False
 
 
 # Public alias so callers outside this module can type-annotate against
@@ -647,6 +652,7 @@ class DeviceManager:
             ios_version=ios_version_str,
             connection_type="Network",
             rsd=rsd,
+            via_tunnel=True,
         )
 
         async with self._lock:
@@ -739,6 +745,12 @@ class DeviceManager:
             udid for udid, conn in self._connections.items()
             if getattr(conn, "connection_type", "") == connection_type
         ]
+
+    def is_via_wifi_tunnel(self, udid: str) -> bool:
+        """True when *udid* is connected through the in-process WiFi
+        tunnel (as opposed to USB or a usbmux Network connection)."""
+        conn = self._connections.get(udid)
+        return bool(conn is not None and conn.via_tunnel)
 
     async def snapshot_usb_udids(self) -> set[str]:
         """Return the set of currently-connected USB UDIDs, snapshotted

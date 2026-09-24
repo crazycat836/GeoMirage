@@ -96,8 +96,21 @@ async def _tcp_probe(ip: str, port: int, timeout: float = 0.4) -> bool:
         return False
 
 
+def tunnel_udids(dm) -> list[str]:
+    """UDIDs connected through the in-process WiFi tunnel.
+
+    Excludes usbmux Network connections (Finder's Wi-Fi sync), which
+    have their own CoreDevice tunnel and outlive this one.
+    """
+    return [
+        udid for udid in dm.udids_by_connection_type("Network")
+        if dm.is_via_wifi_tunnel(udid)
+    ]
+
+
 async def cleanup_wifi_connections(reason: str = "wifi_tunnel_stopped") -> list[str]:
-    """Disconnect any Network devices + drop the simulation engine.
+    """Disconnect the devices that ride the WiFi tunnel + drop their
+    simulation engines. usbmux Network devices are left alone.
 
     Routes every disconnect through :mod:`services.connection_state`
     (the SSoT installed in commit ``3dc3bb4``) so the state machine and
@@ -114,7 +127,7 @@ async def cleanup_wifi_connections(reason: str = "wifi_tunnel_stopped") -> list[
     dm = app_state.device_manager
     udids: list[str] = []
     try:
-        udids = dm.udids_by_connection_type("Network")
+        udids = tunnel_udids(dm)
         # Stop engine tasks *before* tearing down the transport. A running
         # Navigate / RandomWalk loop would otherwise keep emitting events
         # against a dead RSD and spam "arrived at destination" log noise.

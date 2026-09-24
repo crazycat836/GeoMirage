@@ -49,6 +49,7 @@ async def tunnel_liveness_loop(stop: asyncio.Event, app_state=None) -> None:
         _tcp_probe,
         cleanup_wifi_connections,
         tunnel,
+        tunnel_udids,
     )
 
     if app_state is None:
@@ -99,11 +100,11 @@ async def tunnel_liveness_loop(stop: asyncio.Event, app_state=None) -> None:
                 miss_count = 0
                 continue
 
-            # Skip probing when no Network device currently consumes the
-            # tunnel — there's nothing to falsely advertise as "connected"
-            # and the user may still be mid-handshake on a fresh tunnel.
+            # Skip probing when no device currently consumes the tunnel —
+            # there's nothing to falsely advertise as "connected" and the
+            # user may still be mid-handshake on a fresh tunnel.
             dm = app_state.device_manager
-            if not dm.udids_by_connection_type("Network"):
+            if not tunnel_udids(dm):
                 miss_count = 0
                 continue
 

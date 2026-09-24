@@ -95,7 +95,9 @@ async def probe_dvt_health_one(udid: str) -> bool:
     return alive
 
 
-async def probe_transport_alive_one(udid: str, conn_type: str) -> bool:
+async def probe_transport_alive_one(
+    udid: str, conn_type: str, via_tunnel: bool = True,
+) -> bool:
     """Transport-level liveness check for *udid*.
 
     Returns ``False`` only when the underlying transport is provably
@@ -106,29 +108,36 @@ async def probe_transport_alive_one(udid: str, conn_type: str) -> bool:
     check is a no-op once :attr:`DvtLocationService._location_sim` is
     populated, so it can't catch this on its own.
 
-    Network: the WiFi tunnel must (a) be running, (b) have RSD info,
-    (c) report :meth:`TunnelRunner.transport_alive` true. Any of those
-    failing means pymobiledevice3 silently dropped the underlying read
-    tasks and the data path is dead.
+    Network via the in-process tunnel (*via_tunnel*): the WiFi tunnel
+    must (a) be running, (b) have RSD info, (c) report
+    :meth:`TunnelRunner.transport_alive` true. Any of those failing means
+    pymobiledevice3 silently dropped the underlying read tasks and the
+    data path is dead.
+
+    Network over usbmux (Finder's Wi-Fi sync, no in-process tunnel): the
+    device must still be listed by usbmux, same as USB.
 
     USB: the device must appear in :func:`pymobiledevice3.usbmux.list_devices`.
     Failure to reach usbmuxd at all falls back to "alive" so a usbmux
     blip never disconnects every USB device on a WS reconnect.
     """
-    if conn_type == "Network":
+    if conn_type == "Network" and via_tunnel:
         from services.wifi_tunnel_service import tunnel
         if not tunnel.is_running() or tunnel.info is None:
             return False
         if hasattr(tunnel, "transport_alive") and not tunnel.transport_alive():
             return False
         return True
-    if conn_type == "USB":
+    if conn_type in ("USB", "Network"):
         try:
             from pymobiledevice3.usbmux import list_devices
             raw = await asyncio.wait_for(list_devices(), timeout=2.0)
         except Exception:
             return True
-        present = {getattr(r, "serial", None) for r in raw if getattr(r, "connection_type", "USB") == "USB"}
+        present = {
+            getattr(r, "serial", None) for r in raw
+            if getattr(r, "connection_type", "USB") == conn_type
+        }
         return udid in present
     return True
 
@@ -164,6 +173,7 @@ async def probe_connected_devices(udids: list[str]) -> None:
             # path return a MagicMock — ``isinstance`` filters those out
             # so we skip transport probing and fall through to DVT-only.
             conn_type: str | None = None
+            via_tunnel = True
             if dm is not None:
                 try:
                     raw_type = dm.get_connection_type(udid)
@@ -171,9 +181,15 @@ async def probe_connected_devices(udids: list[str]) -> None:
                     raw_type = None
                 if isinstance(raw_type, str) and raw_type in ("USB", "Network"):
                     conn_type = raw_type
+                try:
+                    raw_via = dm.is_via_wifi_tunnel(udid)
+                except Exception:
+                    raw_via = None
+                if isinstance(raw_via, bool):
+                    via_tunnel = raw_via
 
             if conn_type is not None and not await probe_transport_alive_one(
-                udid, conn_type,
+                udid, conn_type, via_tunnel,
             ):
                 logger.info(
                     "WS connect transport probe: %s (%s) reports dead — "
