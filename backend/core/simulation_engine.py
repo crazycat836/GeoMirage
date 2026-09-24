@@ -411,6 +411,21 @@ class SimulationEngine:
         """Update the joystick direction/intensity (non-blocking)."""
         self._joystick.update_input(joystick_input)
 
+    def _leave_joystick_state(self) -> bool:
+        """Drop back to IDLE from JOYSTICK, or from a pause taken during
+        joystick mode. Returns False (and changes nothing) when another
+        mode owns the state. The caller emits the state_change."""
+        in_joystick = self.state == SimulationState.JOYSTICK or (
+            self.state == SimulationState.PAUSED
+            and self._paused_from in (None, SimulationState.JOYSTICK)
+        )
+        if not in_joystick:
+            return False
+        self.state = SimulationState.IDLE
+        self._paused_from = None
+        self._pause_event.set()
+        return True
+
     async def joystick_stop(self) -> None:
         """Deactivate joystick mode."""
         await self._joystick.stop()

@@ -7,6 +7,7 @@ import logging
 
 from models.schemas import JoystickInput, MovementMode, SimulationState
 from services.interpolator import RouteInterpolator
+from services.location_service import unwrap_device_lost
 from config import SPEED_PROFILES
 
 logger = logging.getLogger(__name__)
@@ -117,10 +118,27 @@ class JoystickHandler:
                 await asyncio.sleep(_TICK_INTERVAL)
         except asyncio.CancelledError:
             pass
-        except Exception:
+        except Exception as exc:
             logger.exception("Joystick loop error")
+            self.is_active = False
+            await self._abort(exc)
         finally:
             self.is_active = False
+
+    async def _abort(self, exc: Exception) -> None:
+        """Return the engine to IDLE after the tick loop died, so the UI
+        stops showing an active joystick that no longer moves."""
+        engine = self.engine
+        if not engine._leave_joystick_state():
+            return
+        # A lost device is announced by the device watchdog; anything else
+        # gets the same crash toast a failed movement task gets.
+        if unwrap_device_lost(exc) is None:
+            await engine._emit("device_error", {
+                "stage": "simulation:joystick",
+                "error": str(exc),
+            })
+        await engine._emit("state_change", {"state": engine.state.value})
 
     async def stop(self) -> None:
         """Deactivate joystick mode."""

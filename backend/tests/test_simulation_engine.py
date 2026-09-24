@@ -595,3 +595,49 @@ def test_old_run_cleanup_does_not_clear_the_new_runs_snapshot():
             assert snap.destination == {"lat": second_dest.lat, "lng": second_dest.lng}
 
     asyncio.run(scenario())
+
+
+# ── Joystick loop crash ───────────────────────────────────────────────────
+
+class _FailingLocationService(FakeLocationService):
+    """Raises *exc* from the Nth push onward."""
+
+    def __init__(self, fail_from: int, exc: Exception) -> None:
+        super().__init__()
+        self.fail_from = fail_from
+        self.exc = exc
+
+    async def set(self, lat: float, lng: float) -> None:
+        if len(self.calls) + 1 >= self.fail_from:
+            raise self.exc
+        await super().set(lat, lng)
+
+
+@pytest.mark.parametrize("lost", [False, True])
+def test_joystick_loop_crash_returns_engine_to_idle(lost):
+    from core.simulation_engine import SimulationEngine
+    from models.schemas import Coordinate, JoystickInput, MovementMode, SimulationState
+    from services.location_service import DeviceLostError
+
+    async def scenario():
+        exc = DeviceLostError("gone") if lost else ValueError("boom")
+        service = _FailingLocationService(fail_from=3, exc=exc)
+        recorder = EventRecorder()
+        engine = SimulationEngine(service, event_callback=recorder)
+        engine.current_position = Coordinate(lat=25.0, lng=121.5)
+
+        await engine.joystick_start(MovementMode.WALKING)
+        engine.joystick_move(JoystickInput(direction=90, intensity=1.0))
+        await _wait_for(lambda: engine.state == SimulationState.IDLE)
+
+        assert recorder.states()[-1] == "idle"
+        assert engine._joystick.is_active is False
+        errors = [d for t, d in recorder.events if t == "device_error"]
+        if lost:
+            # The device watchdog owns the disconnect notice.
+            assert errors == []
+        else:
+            assert errors and errors[-1]["stage"] == "simulation:joystick"
+            assert "boom" in errors[-1]["error"]
+
+    asyncio.run(scenario())
