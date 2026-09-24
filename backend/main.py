@@ -12,12 +12,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 import auth
+from services.json_store import StorePersistError
 from services.route_service import RouteUnavailableError
 from api._envelope import (
     EnvelopeJSONResponse,
     http_exception_handler,
     internal_exception_handler,
     route_unavailable_handler,
+    store_persist_error_handler,
     unauthorized_response,
     validation_exception_handler,
 )
@@ -351,6 +353,7 @@ app = FastAPI(
 app.add_exception_handler(HTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(RouteUnavailableError, route_unavailable_handler)
+app.add_exception_handler(StorePersistError, store_persist_error_handler)
 app.add_exception_handler(Exception, internal_exception_handler)
 
 class _TokenAuthMiddleware(BaseHTTPMiddleware):

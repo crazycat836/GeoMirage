@@ -290,6 +290,7 @@ export const STRINGS = {
   'err.amfi_reveal_failed': { zh: '顯示開發者模式失敗', en: 'Failed to reveal Developer Mode' },
   'err.open_log_failed': { zh: '開啟日誌檔案失敗', en: 'Failed to open log file' },
   'err.settings_persist_failed': { zh: '設定儲存失敗,請檢查磁碟空間與權限', en: 'Failed to save settings; check disk space and permissions' },
+  'err.store_persist_failed': { zh: '資料儲存失敗,請檢查磁碟空間與權限', en: 'Failed to save data; check disk space and permissions' },
   // Catch-all for uncaught backend exceptions (Exception handler in main.py)
   'err.internal_error': { zh: '伺服器發生內部錯誤,請重試', en: 'Internal server error, please retry' },
 

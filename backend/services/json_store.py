@@ -49,6 +49,12 @@ class _Orderable(Protocol):
 ItemT = TypeVar("ItemT", bound=_Orderable)
 
 
+class StorePersistError(Exception):
+    """A store write to disk failed. The API maps this to 500
+    ``store_persist_failed`` so the client never sees a 200 for data that
+    only lives in memory."""
+
+
 def next_sort_order(items: list[ItemT]) -> int:
     """Sort order for a row appended at the end: ``max + 1``, or 0 when
     the list is empty. Shared by every create/insert/import mutator."""
@@ -94,7 +100,13 @@ class JsonModelStore(Generic[StoreT]):
         # asyncio.Lock created here is bound lazily to the running loop on
         # first acquire (Python 3.10+), so import-time __init__ is safe.
         self._lock = asyncio.Lock()
+        # JSON payload matching the file on disk (or the loaded store when
+        # the file could not be written). A failed write restores
+        # ``self._store`` from it so memory never runs ahead of disk.
+        self._persisted_payload: dict | None = None
         self._store: StoreT = self._load()
+        if self._persisted_payload is None:
+            self._persisted_payload = json.loads(self._store.model_dump_json())
 
     # ------------------------------------------------------------------
     # Subclass hooks
@@ -156,7 +168,12 @@ class JsonModelStore(Generic[StoreT]):
         self._log_loaded(store)
         store, ensured = self._ensure_presets(store)
         if migrated or ensured:
-            self._persist_store(store)
+            try:
+                self._persist_store(store)
+            except StorePersistError:
+                # Startup must not fail on a write; the next mutation
+                # retries and surfaces the error to the client.
+                logger.warning("Could not re-persist %s store after load", self.store_label)
         return store
 
     def _quarantine_invalid_file(self, exc: Exception) -> None:
@@ -191,9 +208,13 @@ class JsonModelStore(Generic[StoreT]):
     def _persist_store(self, store: StoreT) -> None:
         """Serialise + atomically write *store*. Blocking — invoked directly
         during the synchronous ``__init__`` load, or via ``asyncio.to_thread``
-        from :meth:`_persist` so the fsync never stalls the event loop."""
+        from :meth:`_persist` so the fsync never stalls the event loop.
+
+        Raises :class:`StorePersistError` when the write fails."""
         payload = json.loads(store.model_dump_json())
-        safe_write_json(self._file_path, payload)
+        if not safe_write_json(self._file_path, payload):
+            raise StorePersistError(f"failed to write {self._file_path.name}")
+        self._persisted_payload = payload
 
     async def _persist(self) -> None:
         """Offload the blocking store write to a worker thread.
@@ -201,5 +222,13 @@ class JsonModelStore(Generic[StoreT]):
         Callers hold ``self._lock`` across this await, so no other coroutine
         can mutate the store while the worker thread serialises it — the
         read stays torn-free despite running off the event loop.
+
+        On failure the in-memory store is rolled back to the last written
+        payload and :class:`StorePersistError` propagates to the caller.
         """
-        await asyncio.to_thread(self._persist_store, self._store)
+        try:
+            await asyncio.to_thread(self._persist_store, self._store)
+        except StorePersistError:
+            if self._persisted_payload is not None:
+                self._store = self._validate(self._persisted_payload)
+            raise

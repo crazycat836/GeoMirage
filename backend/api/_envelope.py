@@ -36,6 +36,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from api._errors import ErrorCode
+from services.json_store import StorePersistError
 from services.route_service import RouteUnavailableError
 
 logger = logging.getLogger("geomirage")
@@ -111,6 +112,20 @@ async def route_unavailable_handler(
     every endpoint that calls into RouteService (plan / optimize / …)."""
     error = {"code": ErrorCode.ROUTE_UNAVAILABLE.value, "message": str(exc)}
     return JSONResponse(_error_envelope(error), status_code=503)
+
+
+async def store_persist_error_handler(
+    _request: Request, exc: StorePersistError
+) -> JSONResponse:
+    """Map a failed bookmark / saved-route write to 500
+    ``store_persist_failed`` so the client never gets a 200 for data that
+    did not reach disk (same idea as ``settings_persist_failed``)."""
+    logger.error("Store persist failed: %s", exc)
+    error = {
+        "code": ErrorCode.STORE_PERSIST_FAILED.value,
+        "message": "Failed to save data to disk",
+    }
+    return JSONResponse(_error_envelope(error), status_code=500)
 
 
 async def validation_exception_handler(
