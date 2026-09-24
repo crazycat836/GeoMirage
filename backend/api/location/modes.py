@@ -186,7 +186,7 @@ async def flower(req: FlowerRequest):
 async def joystick_start(req: JoystickStartRequest):
     engine = await get_engine(req.udid)
     try:
-        await guard(engine.joystick_start(req.mode))
+        await guard(engine.joystick_start(req.mode), req.udid)
     except HTTPException:
         raise
     except Exception:
@@ -198,7 +198,7 @@ async def joystick_start(req: JoystickStartRequest):
 @router.post("/joystick/stop")
 async def joystick_stop(udid: str | None = None):
     engine = await get_engine(udid)
-    await guard(engine.joystick_stop())
+    await guard(engine.joystick_stop(), udid)
     return {"status": "stopped"}
 
 

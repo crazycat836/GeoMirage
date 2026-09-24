@@ -463,7 +463,7 @@ async def create_dvt_location_service(
             # Prefer the original usbmux/TCP lockdown for DtSimulateLocation;
             # fall back to whatever we have stored if not available.
             legacy_lockdown = conn.usbmux_lockdown or conn.lockdown
-            legacy = LegacyLocationService(legacy_lockdown)
+            legacy = LegacyLocationService(legacy_lockdown, udid=conn.udid)
             logger.info("Using LegacyLocationService fallback for %s", conn.udid)
             return legacy
         except Exception:
@@ -482,4 +482,4 @@ async def create_legacy_location_service(
     except Exception:
         logger.warning("Classic DDI auto-mount failed; legacy location may still fail", exc_info=True)
     logger.info("Using LegacyLocationService for %s", conn.udid)
-    return LegacyLocationService(conn.lockdown)
+    return LegacyLocationService(conn.lockdown, udid=conn.udid)

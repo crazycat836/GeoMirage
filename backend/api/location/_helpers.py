@@ -60,32 +60,47 @@ _DEVICE_LOST_MESSAGE: dict[DeviceLostCause, str] = {
 }
 
 
-async def handle_device_lost(exc: DeviceLostError) -> HTTPException:
-    """Disconnect the stale device, drop its engine, broadcast
+def _lost_udids(app_state, exc: DeviceLostError, udid: str | None) -> list[str]:
+    """Pick the device(s) a DeviceLostError refers to.
+
+    Order: the udid the raiser stamped on the error → the caller's
+    target udid → the primary engine's udid (the engine a udid-less
+    request runs on). Only when none of those is known does the cleanup
+    fall back to every connected device, which is also what a single
+    connected device resolves to anyway.
+    """
+    target = exc.udid or udid
+    if target is None:
+        primary = app_state.simulation_engine
+        if primary is not None:
+            target = next(
+                (u for u, e in app_state.simulation_engines.items() if e is primary),
+                None,
+            )
+    if target is not None:
+        return [target]
+    return list(app_state.device_manager.connected_udids)
+
+
+async def handle_device_lost(
+    exc: DeviceLostError, udid: str | None = None,
+) -> HTTPException:
+    """Tear down the lost device (engine first, then transport), broadcast
     ``device_disconnected`` (with cause), and return a 503 ready to
-    raise. All callers either catch ``DeviceLostError`` directly or
-    extract a nested one via ``unwrap_device_lost`` before calling.
+    raise. Only the device the error refers to is torn down — see
+    :func:`_lost_udids` — so the other phone in dual mode keeps running.
+    All callers either catch ``DeviceLostError`` directly or extract a
+    nested one via ``unwrap_device_lost`` before calling.
     """
     cause = exc.cause
     app_state = get_app_state()
-    dm = app_state.device_manager
-    lost_udids = dm.connected_udids
-    for udid in lost_udids:
-        # disconnect_device drops the transport (swallows transport
-        # errors, since on a device-lost path every close step is
-        # expected to fail) and broadcasts device_disconnected via the
-        # connection_state WS observer. Routed through dedup so a
-        # parallel watchdog emit doesn't double-toast. ``cause`` is the
-        # DeviceLostCause string ("usb_removed", "wifi_dropped", …) so
-        # the renderer can localize the toast.
-        await connection_state.disconnect_device(dm, udid, cause=cause.value)
-        # Only remove this udid's engine; the legacy `= None` setter clears
-        # every engine (bad for dual mode). terminate_engine cancels any
-        # in-flight task, pops the registry slot, and rotates _primary_udid.
-        try:
-            await app_state.terminate_engine(udid)
-        except Exception:
-            logger.exception("device_lost cleanup: terminate_engine failed for %s", udid)
+    for lost in _lost_udids(app_state, exc, udid):
+        # terminate_engine → disconnect_device → DISCONNECTED transition,
+        # which broadcasts device_disconnected through the dedup'd WS
+        # observer. ``cause`` is the DeviceLostCause string
+        # ("usb_removed", "wifi_dropped", …) so the renderer can
+        # localize the toast.
+        await connection_state.teardown_device(app_state, lost, cause=cause.value)
 
     return http_err(
         503, ErrorCode.DEVICE_LOST,
@@ -94,21 +109,22 @@ async def handle_device_lost(exc: DeviceLostError) -> HTTPException:
     )
 
 
-async def guard(coro: Awaitable[Any]) -> Any:
+async def guard(coro: Awaitable[Any], udid: str | None = None) -> Any:
     """Run an awaitable and translate DeviceLostError into the same
     broadcast + HTTP 503 flow `teleport` uses. Use on any route whose
     engine call can touch the device (location_service.set/clear),
-    i.e. stop/restore/pause/resume/joystick/apply-speed."""
+    i.e. stop/restore/pause/resume/joystick/apply-speed. *udid* is the
+    request's target device (None = primary)."""
     try:
         return await coro
     except HTTPException:
         raise
     except DeviceLostError as exc:
-        raise (await handle_device_lost(exc))
+        raise (await handle_device_lost(exc, udid))
     except Exception as exc:
         nested = unwrap_device_lost(exc)
         if nested is not None:
-            raise (await handle_device_lost(nested))
+            raise (await handle_device_lost(nested, udid))
         raise
 
 
@@ -123,7 +139,8 @@ async def exec_with_retry(
     DeviceLostError funnels into :func:`handle_device_lost` (cleanup +
     broadcast + 503) via :func:`guard`."""
     return await guard(
-        engine_recovery.exec_with_retry(get_app_state(), udid_arg, engine, label, op)
+        engine_recovery.exec_with_retry(get_app_state(), udid_arg, engine, label, op),
+        udid_arg,
     )
 
 
@@ -196,7 +213,7 @@ def spawn(
         # device_disconnected instead of a silently-dead engine.
         nested = unwrap_device_lost(exc)
         if nested is not None:
-            _track(asyncio.create_task(handle_device_lost(nested)))
+            _track(asyncio.create_task(handle_device_lost(nested, udid)))
             return
         logger.exception("background task crashed: %s", exc, exc_info=exc)
         _track(asyncio.create_task(_broadcast_task_crash(label, udid, exc)))

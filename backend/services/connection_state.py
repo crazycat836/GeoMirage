@@ -335,6 +335,24 @@ async def disconnect_device(dm, udid: str, *, cause: str) -> None:
     await store.transition(udid, DeviceState.DISCONNECTED, cause=cause)
 
 
+async def teardown_device(app_state, udid: str, *, cause: str) -> None:
+    """Tear down one device in the fixed order: engine first, then
+    transport, then the DISCONNECTED transition.
+
+    ``terminate_engine`` cancels the movement task, the device's
+    dual-sync task and its idle jitter (``engine.stop()``), so nothing
+    keeps pushing coordinates at a transport that is about to close.
+    :func:`disconnect_device` then drops the transport and fires the
+    transition (and, through the WS observer, ``device_disconnected``).
+    A failing engine stop never skips the disconnect.
+    """
+    try:
+        await app_state.terminate_engine(udid)
+    except Exception:
+        logger.exception("teardown: terminate_engine failed for %s", udid)
+    await disconnect_device(app_state.device_manager, udid, cause=cause)
+
+
 async def mark_degraded(udid: str, *, cause: str) -> None:
     """Flag *udid* as having a degraded transport (DVT channel reconnecting).
 

@@ -56,14 +56,14 @@ async def apply_speed(req: ApplySpeedRequest):
 @router.post("/pause")
 async def pause(udid: str | None = None):
     engine = await get_engine(udid)
-    await guard(engine.pause())
+    await guard(engine.pause(), udid)
     return {"status": "paused"}
 
 
 @router.post("/resume")
 async def resume(udid: str | None = None):
     engine = await get_engine(udid)
-    await guard(engine.resume())
+    await guard(engine.resume(), udid)
     return {"status": "resumed"}
 
 
@@ -80,5 +80,5 @@ async def stop_movement(udid: str | None = None):
     Keeps the device at its last reported position instead of restoring
     real GPS. restore() is a separate endpoint for that."""
     engine = await get_engine(udid)
-    await guard(engine.stop())
+    await guard(engine.stop(), udid)
     return {"status": "stopped"}

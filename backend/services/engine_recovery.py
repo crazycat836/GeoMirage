@@ -192,6 +192,10 @@ async def exec_with_retry(
     except NoDeviceError:
         # No device left to reconnect to — original DeviceLost is the truth.
         raise first_lost
+    # Name the device on the error so the API layer's cleanup tears down
+    # this one only, not every connected phone.
+    if first_lost.udid is None:
+        first_lost.udid = target_udid
 
     logger.warning(
         "%s failed (DeviceLost: %s); retrying once after full reconnect",
@@ -207,11 +211,15 @@ async def exec_with_retry(
     target_engine = app_state.get_engine(target_udid) or rebuilt
     try:
         return await op(target_engine)
-    except DeviceLostError:
+    except DeviceLostError as exc:
         logger.warning("%s retry after full reconnect also failed", label)
+        if exc.udid is None:
+            exc.udid = target_udid
         raise
     except Exception as exc:
         nested = unwrap_device_lost(exc)
         if nested is not None:
+            if nested.udid is None:
+                nested.udid = target_udid
             raise nested
         raise

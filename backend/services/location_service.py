@@ -56,6 +56,8 @@ class DeviceLostError(RuntimeError):
     connection is no longer recoverable. The ``cause`` attribute identifies
     the root-cause class so the API layer can surface a precise user-facing
     message; ``UNKNOWN`` is the safe default when classification fails.
+    ``udid`` names the device that was lost (None when the raiser doesn't
+    know it), so cleanup can tear down that device alone in dual mode.
     """
 
     def __init__(
@@ -63,9 +65,11 @@ class DeviceLostError(RuntimeError):
         message: str = "",
         *,
         cause: DeviceLostCause = DeviceLostCause.UNKNOWN,
+        udid: str | None = None,
     ) -> None:
         super().__init__(message)
         self.cause: DeviceLostCause = cause
+        self.udid: str | None = udid
 
 
 def classify_device_lost_cause(exc: BaseException | None) -> DeviceLostCause:
@@ -89,13 +93,15 @@ def classify_device_lost_cause(exc: BaseException | None) -> DeviceLostCause:
     return DeviceLostCause.UNKNOWN
 
 
-def _raise_device_lost(message: str, exc: BaseException) -> None:
+def _raise_device_lost(
+    message: str, exc: BaseException, udid: str | None = None,
+) -> None:
     """Classify *exc*, log at error level with the cause label, and raise
     ``DeviceLostError`` chained from it. Pulls the three reconnect-exhausted
     raise sites onto a single audit-friendly path."""
     cause = classify_device_lost_cause(exc)
     logger.error("%s — device likely lost (%s, cause=%s)", message, exc, cause.value)
-    raise DeviceLostError(f"{message}: {exc}", cause=cause) from exc
+    raise DeviceLostError(f"{message}: {exc}", cause=cause, udid=udid) from exc
 
 
 def unwrap_device_lost(exc: BaseException | None) -> DeviceLostError | None:
@@ -370,7 +376,7 @@ class DvtLocationService(LocationService):
                 except Exception as exc:
                     last_exc = exc
             assert last_exc is not None  # delays loop ran at least once
-            _raise_device_lost("DVT reconnect failed", last_exc)
+            _raise_device_lost("DVT reconnect failed", last_exc, self._udid)
 
     async def probe_channel_alive(self) -> bool:
         """Actively verify the DVT instrument channel is still usable.
@@ -474,8 +480,9 @@ class LegacyLocationService(LocationService):
         A lockdown service provider (LockdownClient) for the target device.
     """
 
-    def __init__(self, lockdown_client) -> None:
+    def __init__(self, lockdown_client, udid: str | None = None) -> None:
         self._lockdown = lockdown_client
+        self._udid = udid
         self._service: DtSimulateLocation | None = None
         self._active = False
 
@@ -517,7 +524,7 @@ class LegacyLocationService(LocationService):
                 self._active = True
                 logger.info("Legacy location set to (%.6f, %.6f) after reconnect", lat, lng)
             except Exception as retry_exc:
-                _raise_device_lost("Legacy reconnect failed", retry_exc)
+                _raise_device_lost("Legacy reconnect failed", retry_exc, self._udid)
         except Exception:
             logger.exception("Failed to set legacy simulated location")
             raise
@@ -556,7 +563,9 @@ class LegacyLocationService(LocationService):
                 await self._maybe_await(svc.clear())
                 self._active = False
             except Exception as retry_exc:
-                _raise_device_lost("Legacy clear failed after reconnect", retry_exc)
+                _raise_device_lost(
+                    "Legacy clear failed after reconnect", retry_exc, self._udid,
+                )
         except Exception:
             logger.exception("Failed to clear legacy simulated location")
             raise
