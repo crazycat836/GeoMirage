@@ -466,6 +466,8 @@ class BookmarkManager(JsonModelStore[BookmarkStore]):
                     ))
                 updates[key] = value
 
+            if "lat" in updates or "lng" in updates:
+                updates["flag_checked"] = False  # new coordinates, new lookup
             if updates:
                 new_bm = bm.model_copy(update=updates)
                 idx = self.store.bookmarks.index(bm)
@@ -474,6 +476,32 @@ class BookmarkManager(JsonModelStore[BookmarkStore]):
 
             await self._persist()
             return bm
+
+    async def apply_country_lookups(
+        self, results: dict[str, tuple[str, str]],
+    ) -> int:
+        """Store flag backfill results and persist once.
+
+        *results* maps bookmark id to ``(country_code, country)``; an empty
+        code records a definitive "no country" answer. Every looked-up row
+        is marked ``flag_checked``. Returns how many rows got a country.
+        """
+        async with self._lock:
+            filled = 0
+            changed = False
+            for idx, bm in enumerate(self.store.bookmarks):
+                if bm.id not in results:
+                    continue
+                cc, country = results[bm.id]
+                update: dict[str, object] = {"flag_checked": True}
+                if cc:
+                    update.update(country_code=cc, country=country)
+                    filled += 1
+                self.store.bookmarks[idx] = bm.model_copy(update=update)
+                changed = True
+            if changed:
+                await self._persist()
+            return filled
 
     async def touch_bookmark(self, bm_id: str) -> Bookmark | None:
         """Stamp ``last_used_at`` on *bm_id* with the current UTC time.

@@ -160,16 +160,22 @@ async def tag_bookmarks(req: BookmarkTagRequest):
 @router.post("/backfill-flags")
 async def backfill_flags():
     """Reverse-geocode and fill country_code/country for any bookmark that
-    lacks them. Safe to re-run: already-populated entries are skipped."""
+    lacks them. Safe to re-run: populated rows, and rows already answered
+    with "no country", are skipped. Results are written in one persist.
+    A network or HTTP failure ends the run without marking the remaining
+    rows, so they are retried next session."""
     bm = get_bookmark_manager()
-    filled = 0
+    results: dict[str, tuple[str, str]] = {}
     for b in bm.list_bookmarks():
-        if b.country_code:
+        if b.country_code or b.flag_checked:
             continue
-        cc, country = await _resolve_country(b.lat, b.lng)
-        if cc:
-            await bm.update_bookmark(b.id, country_code=cc, country=country)
-            filled += 1
+        try:
+            res = await _geocoder.reverse(b.lat, b.lng, strict=True)
+        except Exception:
+            logger.info("Flag backfill stopped: reverse geocode unavailable", exc_info=True)
+            break
+        results[b.id] = (res.country_code or "", res.country or "") if res else ("", "")
+    filled = await bm.apply_country_lookups(results) if results else 0
     return {"filled": filled}
 
 

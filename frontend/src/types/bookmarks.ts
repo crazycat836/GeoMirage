@@ -22,6 +22,9 @@ export interface Bookmark {
   // Empty string for legacy rows until /backfill-flags runs.
   country_code?: string
   country?: string
+  // True once the backfill got a definitive "no country" answer (open sea),
+  // so the lookup isn't repeated every session.
+  flag_checked?: boolean
   // Explicit drag-reorder position; back-fills to 0 on legacy rows.
   sort_order?: number
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatBookmarkImportSummary } from './bookmark_helpers'
+import { formatBookmarkImportSummary, needsFlagBackfill } from './bookmark_helpers'
 import { translate } from '../i18n'
 import type { StringKey } from '../i18n/strings'
 
@@ -38,5 +38,21 @@ describe('formatBookmarkImportSummary', () => {
 
   it('tolerates an older backend that only returns imported', () => {
     expect(formatBookmarkImportSummary({ imported: 3 }, t)).toBe('Imported 3 · skipped 0 duplicate(s) · 0 invalid')
+  })
+})
+
+describe('needsFlagBackfill', () => {
+  const base = { id: 'a', name: 'A', lat: 0, lng: 0, place_id: 'default', tags: [] }
+
+  it('is true for a row with no flag that was never looked up', () => {
+    expect(needsFlagBackfill([{ ...base, country_code: '' }])).toBe(true)
+  })
+
+  it('skips rows the backend already answered with "no country"', () => {
+    expect(needsFlagBackfill([{ ...base, country_code: '', flag_checked: true }])).toBe(false)
+  })
+
+  it('is false when every row has a flag', () => {
+    expect(needsFlagBackfill([{ ...base, country_code: 'jp' }])).toBe(false)
   })
 })

@@ -178,14 +178,16 @@ class GeocodingService:
     # ------------------------------------------------------------------
 
     async def reverse(
-        self, lat: float, lng: float, lang: str | None = None
+        self, lat: float, lng: float, lang: str | None = None, *, strict: bool = False
     ) -> GeocodingResult | None:
         """Reverse geocode: coordinates -> address.
 
         Passing ``lang`` forwards an ``accept-language`` hint to Nominatim so
         ``address.country`` is returned in the requested language.
 
-        Returns ``None`` when no result is found.
+        Returns ``None`` when no result is found. With ``strict``, network
+        and HTTP failures are re-raised instead of also returning ``None``,
+        so a caller can tell "no answer" from "no country here".
         """
         params: dict[str, object] = {
             "lat": lat,
@@ -214,12 +216,18 @@ class GeocodingService:
             data = resp.json()
         except (httpx.ConnectError, httpx.TimeoutException) as exc:
             logger.warning("Nominatim reverse unreachable (%s): %s", type(exc).__name__, exc)
+            if strict:
+                raise
             return None
         except httpx.HTTPStatusError as exc:
             logger.warning("Nominatim reverse HTTP %d: %s", exc.response.status_code, exc.response.text[:200])
+            if strict:
+                raise
             return None
         except httpx.HTTPError as exc:
             logger.warning("Nominatim reverse failed (%s): %s", type(exc).__name__, exc)
+            if strict:
+                raise
             return None
 
         if "error" in data:

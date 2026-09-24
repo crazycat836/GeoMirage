@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import * as api from '../services/api'
 import { devLog } from '../lib/dev-log'
+import { needsFlagBackfill } from '../lib/bookmark_helpers'
 import type { Bookmark, BookmarkPlace, BookmarkTag } from '../types/bookmarks'
 
 // Domain models live in types/bookmarks.ts (neutral module shared with the
@@ -54,8 +55,7 @@ export function useBookmarks() {
     if (backfilledRef.current) return
     if (loading) return
     if (bookmarks.length === 0) return
-    const hasMissingFlag = bookmarks.some((b) => !b.country_code)
-    if (!hasMissingFlag) return
+    if (!needsFlagBackfill(bookmarks)) return
     backfilledRef.current = true
     api.backfillBookmarkFlags()
       .then((res) => {

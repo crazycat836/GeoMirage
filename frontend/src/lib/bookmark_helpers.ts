@@ -1,6 +1,7 @@
 import type { SavedRoute } from '../services/api'
 import type { BookmarkImportResult } from '../services/bookmarkApi'
 import type { StringKey } from '../i18n/strings'
+import type { Bookmark } from '../types/bookmarks'
 
 // Pure helpers + types lifted out of BookmarkContext so the provider
 // stays focused on state + handler wiring.
@@ -101,4 +102,11 @@ export function validateRoutesImport(data: unknown): void {
   if (!data || typeof data !== 'object' || !Array.isArray((data as { routes?: unknown }).routes)) {
     throw new Error('invalid file: missing routes array')
   }
+}
+
+/** Whether any bookmark still lacks a flag and hasn't been looked up yet.
+ *  Rows the backend already answered with "no country" are skipped, so a
+ *  bookmark in open sea doesn't trigger a backfill on every start. */
+export function needsFlagBackfill(bookmarks: readonly Bookmark[]): boolean {
+  return bookmarks.some((b) => !b.country_code && !b.flag_checked)
 }

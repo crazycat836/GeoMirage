@@ -348,6 +348,9 @@ class Bookmark(BaseModel):
     # existing JSON files without these fields load unchanged.
     country_code: str = ""
     country: str = ""
+    # Set once the flag backfill got a definitive "no country" answer (open
+    # sea, Nominatim error), so the lookup isn't repeated on every start.
+    flag_checked: bool = False
     # Free-form user note from the edit dialog.
     note: str = Field(default="", max_length=2000)
     # Insertion-order fallback used by the drag-reorder UI. Stored
