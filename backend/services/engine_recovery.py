@@ -18,6 +18,7 @@ import asyncio
 import logging
 from typing import Any, Awaitable, Callable
 
+from config import MAX_DEVICES
 from services import connection_state
 from services.location_service import DeviceLostError, unwrap_device_lost
 
@@ -104,12 +105,17 @@ async def get_or_rebuild_engine(app_state, target_udid: str):
 
 
 async def force_reconnect(app_state, dm, target_udid: str):
-    """Hard reset: disconnect → reconnect → rebuild. Last-resort recovery
+    """Hard reset: tear down → reconnect → rebuild. Last-resort recovery
     for the iOS 17+ "RSD tunnel alive but DVT channel stale" case.
 
     Returns the rebuilt engine on success or None if reconnect/rebuild fails.
 
-    Routes both transport calls through :mod:`services.connection_state`
+    Reconnects over the transport the device used: a device on the
+    in-process WiFi tunnel reconnects through that tunnel's RSD (usbmux
+    doesn't list it); everything else goes through usbmux. Teardown
+    stops the engine before closing the transport.
+
+    Routes the transport calls through :mod:`services.connection_state`
     so the renderer receives ``device_disconnected`` then
     ``device_connected`` exactly once (via the installed WS observer).
     Without these emits the underlying lockdown is rebuilt fresh but
@@ -118,8 +124,23 @@ async def force_reconnect(app_state, dm, target_udid: str):
     """
     logger.info("attempt 2 (hard reset) for %s", target_udid)
     try:
-        await connection_state.disconnect_device(dm, target_udid, cause="hard_reset")
-        await connection_state.connect_device(dm, target_udid, cause="hard_reset")
+        if dm.is_via_wifi_tunnel(target_udid):
+            if not await _reconnect_over_tunnel(app_state, dm, target_udid):
+                return None
+        else:
+            if (
+                target_udid not in dm.connected_udids
+                and dm.connected_count >= MAX_DEVICES
+            ):
+                logger.warning(
+                    "hard reset for %s skipped: already %d devices connected",
+                    target_udid, dm.connected_count,
+                )
+                return None
+            await connection_state.teardown_device(
+                app_state, target_udid, cause="hard_reset",
+            )
+            await connection_state.connect_device(dm, target_udid, cause="hard_reset")
         await app_state.create_engine_for_device(target_udid)
         # Pin to target_udid's engine — the legacy primary accessor would
         # return the wrong device's engine in dual-device mode (see
@@ -131,6 +152,40 @@ async def force_reconnect(app_state, dm, target_udid: str):
     except Exception:
         logger.exception("Engine rebuild (attempt 2, hard reset) failed for %s", target_udid)
     return None
+
+
+async def _reconnect_over_tunnel(app_state, dm, target_udid: str) -> bool:
+    """Hard-reset transport step for a device on the WiFi tunnel.
+
+    Leaves the connection untouched and returns False when the tunnel is
+    gone: usbmux can't reach the device either, and the tunnel liveness
+    loop owns that teardown.
+    """
+    from services.wifi_tunnel_service import live_tunnel_rsd
+
+    rsd = live_tunnel_rsd()
+    if rsd is None:
+        logger.warning(
+            "hard reset for %s skipped: WiFi tunnel is not alive", target_udid,
+        )
+        return False
+    await connection_state.teardown_device(app_state, target_udid, cause="hard_reset")
+    info = await dm.connect_wifi_tunnel(*rsd)
+    if info.udid != target_udid:
+        logger.warning(
+            "hard reset: tunnel reached %s, not %s; dropping it",
+            info.udid, target_udid,
+        )
+        await dm.disconnect(info.udid)
+        return False
+    await connection_state.announce_connected(
+        target_udid,
+        name=info.name,
+        ios_version=info.ios_version,
+        connection_type="Network",
+        cause="hard_reset",
+    )
+    return True
 
 
 async def acquire_engine(app_state, udid: str | None = None):

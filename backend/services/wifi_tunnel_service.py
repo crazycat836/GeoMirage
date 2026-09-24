@@ -159,6 +159,20 @@ async def cleanup_wifi_connections(reason: str = "wifi_tunnel_stopped") -> list[
     return udids
 
 
+def live_tunnel_rsd() -> tuple[str, int] | None:
+    """The running tunnel's RSD ``(address, port)``, or None when no
+    tunnel is up or its transport has died."""
+    if not tunnel.is_running() or tunnel.info is None:
+        return None
+    if hasattr(tunnel, "transport_alive") and not tunnel.transport_alive():
+        return None
+    rsd_address = tunnel.info.get("rsd_address")
+    rsd_port = tunnel.info.get("rsd_port")
+    if not rsd_address or not rsd_port:
+        return None
+    return rsd_address, rsd_port
+
+
 async def reconnect_usb_over_wifi(udid: str) -> bool:
     """Reconnect a just-dropped USB device over an already-running WiFi
     tunnel, if one is alive. Returns True when the device is back online
@@ -171,15 +185,10 @@ async def reconnect_usb_over_wifi(udid: str) -> bool:
     device with no tunnel running) returns False immediately, preserving
     the existing "re-plug or restart tunnel" behaviour.
     """
-    if not tunnel.is_running() or tunnel.info is None:
+    rsd = live_tunnel_rsd()
+    if rsd is None:
         return False
-    if hasattr(tunnel, "transport_alive") and not tunnel.transport_alive():
-        return False
-    info = tunnel.info
-    rsd_address = info.get("rsd_address")
-    rsd_port = info.get("rsd_port")
-    if not rsd_address or not rsd_port:
-        return False
+    rsd_address, rsd_port = rsd
 
     app_state = ctx.app_state
     dm = app_state.device_manager
