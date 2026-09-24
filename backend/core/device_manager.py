@@ -45,6 +45,11 @@ from services.location_service import LocationService
 
 logger = logging.getLogger(__name__)
 
+# Wait after queueing a location clear before tearing the transport down.
+# stopLocationSimulation is fire-and-forget in pymobiledevice3, so without
+# this window the channel closes before the stop reaches the device.
+CLEAR_FLUSH_S = 0.3
+
 # UnsupportedIosVersionError, parse_ios_version and delete_usbmux_pair_record
 # now live in core.device_utils and are re-exported via the import at the
 # top of this module.
@@ -496,7 +501,7 @@ class DeviceManager:
                 # out the DVT channel / RSD / tunnel before the stop
                 # reaches the device, so the phone keeps the last simulated
                 # coordinate even though our log says "cleared".
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(CLEAR_FLUSH_S)
             except Exception as exc:
                 logger.warning("Error clearing location on disconnect for %s: %s", udid, exc)
 
@@ -755,6 +760,34 @@ class DeviceManager:
         """Return ``'USB'`` or ``'Network'`` for a connected device."""
         conn = self._connections.get(udid)
         return conn.connection_type if conn else "USB"
+
+    async def clear_all_locations(self, *, timeout: float) -> None:
+        """Clear the simulated location on every connected device at once.
+
+        Used at shutdown ahead of :meth:`disconnect_all`, so each iPhone
+        gets its clear within ``timeout`` + the flush window no matter how
+        slowly another device's transport teardown goes. The per-device
+        clear inside :meth:`_close_connection` still runs afterwards.
+        """
+        async with self._lock:
+            services = [
+                (udid, conn.location_service)
+                for udid, conn in self._connections.items()
+                if conn.location_service is not None
+            ]
+        if not services:
+            return
+
+        async def _clear_one(udid: str, loc: LocationService) -> None:
+            try:
+                await asyncio.wait_for(loc.clear(quick=True), timeout=timeout)
+            except Exception as exc:
+                logger.warning("Error clearing location for %s: %s", udid, exc)
+
+        await asyncio.gather(*(_clear_one(u, loc) for u, loc in services))
+        # Same flush window as _close_connection: clear() returns once the
+        # stop message is queued, before iOS has processed it.
+        await asyncio.sleep(CLEAR_FLUSH_S)
 
     async def disconnect_all(self) -> None:
         """Disconnect every active device."""

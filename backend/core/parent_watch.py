@@ -34,7 +34,10 @@ logger = logging.getLogger(__name__)
 PARENT_PID_ENV = "GEOMIRAGE_PARENT_PID"
 
 _POLL_INTERVAL_S = 1.0
-_HARD_EXIT_AFTER_S = 10.0
+# Must exceed the lifespan's worst-case time to reach the last device's
+# location clear (see main._SHUTDOWN_CLEAR_TIMEOUT_S and
+# tests/test_shutdown_order.py), with room left for uvicorn's own shutdown.
+_HARD_EXIT_AFTER_S = 30.0
 
 
 def parent_pid_from_env(environ: Mapping[str, str] | None = None) -> int | None:

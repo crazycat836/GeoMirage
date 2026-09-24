@@ -172,6 +172,46 @@ async def _stop_background_task(
         # A genuine bug in the loop teardown — don't let it vanish.
         logger.exception("shutdown: %s raised during teardown", label)
 
+# Per-device bound on clearing the simulated location at shutdown. The
+# clear is the one step that decides whether the iPhone returns to real
+# GPS, so it runs for all devices at once, ahead of the slower transport
+# teardown, and inside the launcher-watch hard-exit deadline (see
+# core.parent_watch._HARD_EXIT_AFTER_S).
+_SHUTDOWN_CLEAR_TIMEOUT_S = 3.0
+
+
+async def _shutdown_devices(app_state, tunnel, cancel_tunnel_watchdog) -> None:
+    """Device and WiFi-tunnel part of the lifespan shutdown.
+
+    Order: stop every engine (movement, jitter, dual-sync), clear every
+    device's simulated location, disconnect all devices, and only then
+    cancel the tunnel watchdog and stop the WiFi tunnel. A WiFi device's
+    clear travels through that tunnel, so stopping it first left the
+    iPhone at the last simulated coordinate.
+    """
+    for udid in list(app_state.simulation_engines.keys()):
+        try:
+            await app_state.terminate_engine(udid)
+        except Exception:
+            logger.exception("shutdown: terminate_engine failed for %s", udid)
+    # Drain any leftover dual-device auto-sync task (terminate_engine
+    # already cancels the one targeting each udid it stops).
+    await app_state.cancel_sync_tasks()
+    dm = app_state.device_manager
+    try:
+        await dm.clear_all_locations(timeout=_SHUTDOWN_CLEAR_TIMEOUT_S)
+    except Exception:
+        logger.exception("shutdown: clearing simulated locations failed")
+    await dm.disconnect_all()
+    # Cancel the watchdog before stopping the tunnel so it can't treat
+    # the stop as an unexpected exit. Both calls are idempotent.
+    try:
+        cancel_tunnel_watchdog()
+        await tunnel.stop()
+    except Exception:
+        logger.exception("shutdown: WiFi tunnel teardown failed")
+
+
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     from services import connection_state
@@ -294,33 +334,9 @@ async def lifespan(application: FastAPI):
     except Exception:
         logger.exception("shutdown: watchdog task raised during teardown")
 
-    # Tear down the WiFi tunnel (if running) and its watchdog. The liveness /
-    # usbmux loops above don't own these — without this an active RemotePairing
-    # tunnel context is abandoned on shutdown, leaking the OS tun interface and
-    # logging "Task was destroyed but it is pending". Order mirrors the
-    # /wifi/tunnel/stop route: cancel the watchdog BEFORE stopping the tunnel
-    # so it can't race the teardown. Both calls are idempotent.
-    try:
-        from services.wifi_tunnel_service import cancel_watchdog, tunnel as wifi_tunnel
-        cancel_watchdog()
-        await wifi_tunnel.stop()
-    except Exception:
-        logger.exception("shutdown: WiFi tunnel teardown failed")
-
     app_state.save_settings()
-    # Stop all simulation engines before we drop transport. Otherwise
-    # async tasks racing against `disconnect_all()` can log push failures
-    # during shutdown.
-    for udid in list(app_state.simulation_engines.keys()):
-        try:
-            await app_state.terminate_engine(udid)
-        except Exception:
-            logger.exception("shutdown: terminate_engine failed for %s", udid)
-    # Cancel any still-in-flight dual-device auto-sync tasks so they can't
-    # outlive the engines they target (terminate_engine already cancels the
-    # task for each udid it stops; this drains any leftover).
-    await app_state.cancel_sync_tasks()
-    await app_state.device_manager.disconnect_all()
+    from services.wifi_tunnel_service import cancel_watchdog, tunnel as wifi_tunnel
+    await _shutdown_devices(app_state, wifi_tunnel, cancel_watchdog)
 
     # Release the shared HTTP clients last so any in-flight request from
     # the engine teardown above completes before the pool is torn down.
