@@ -152,4 +152,36 @@ describe('deriveConnectionHealth', () => {
     const h = deriveConnectionHealth({ ...baseInput, wsAuthFailed: true })
     expect(h.hint).toBeNull()
   })
+
+  describe('before the first accepted socket (startup)', () => {
+    const down = { ...baseInput, wsConnected: false, everConnected: false, disconnectedAt: 0 }
+
+    it('stays neutral "starting" even past the offline threshold', () => {
+      const h = deriveConnectionHealth({ ...down, now: OFFLINE_THRESHOLD_MS * 5 })
+      expect(h.ws).toBe('starting')
+      expect(h.hint).toBe('ws_starting')
+      expect(h.canOperate).toBe(false)
+    })
+
+    it('says it is waiting for the administrator password while that dialog is up', () => {
+      const h = deriveConnectionHealth({ ...down, now: 60_000, backendPhase: 'awaiting_auth' })
+      expect(h.hint).toBe('ws_awaiting_auth')
+    })
+
+    it('escalates to offline when the backend process exited', () => {
+      const h = deriveConnectionHealth({ ...down, now: OFFLINE_THRESHOLD_MS, backendPhase: 'exited' })
+      expect(h.ws).toBe('offline')
+      expect(h.hint).toBe('ws_offline')
+    })
+
+    it('an auth rejection still wins', () => {
+      const h = deriveConnectionHealth({ ...down, now: 1, wsAuthFailed: true })
+      expect(h.hint).toBe('ws_auth_failed')
+    })
+
+    it('a disconnect after having connected keeps the old reconnecting→offline behaviour', () => {
+      const h = deriveConnectionHealth({ ...down, everConnected: true, now: OFFLINE_THRESHOLD_MS })
+      expect(h.ws).toBe('offline')
+    })
+  })
 })

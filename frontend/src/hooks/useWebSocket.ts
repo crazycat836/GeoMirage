@@ -18,6 +18,12 @@ export interface WsMessage {
 const WS_URL = WS_BASE
 const RECONNECT_INTERVAL = 3000
 const MAX_RECONNECT_INTERVAL = 30000
+// Until the first socket of this app session has been accepted, the backend
+// is most likely still starting (the packaged macOS app waits on the system
+// administrator-password dialog). Retry at a flat 1s so the UI comes alive
+// within a second of the backend being ready, instead of riding a backoff
+// that has already grown towards 30s.
+const STARTUP_RETRY_INTERVAL = 1000
 // Backend closes with this code when the auth frame is rejected
 // (backend/api/websocket.py `_WS_AUTH_FAIL_CODE`).
 const WS_AUTH_FAIL_CODE = 4001
@@ -41,6 +47,14 @@ export function useWebSocket() {
   // a later socket is accepted. Usually means the token on disk belongs to a
   // different backend than the one holding the port.
   const [authFailed, setAuthFailed] = useState(false)
+  // False until the first socket of this session is accepted. Lets the UI
+  // tell "backend still starting" apart from "backend went away".
+  const [everConnected, setEverConnected] = useState(false)
+  // Bumped each time a socket is accepted (first server frame). Consumers
+  // put it in effect deps to re-fetch REST state after a (re)connect.
+  const [connectEpoch, setConnectEpoch] = useState(0)
+  const everConnectedRef = useRef(false)
+  const authFailedRef = useRef(false)
   const wsRef = useRef<WebSocket | null>(null)
   const subscribersRef = useRef<Set<(m: WsMessage) => void>>(new Set())
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -119,8 +133,12 @@ export function useWebSocket() {
         if (!firstMessageReceivedRef.current) {
           firstMessageReceivedRef.current = true
           reconnectDelay.current = RECONNECT_INTERVAL
+          everConnectedRef.current = true
+          authFailedRef.current = false
           setConnected(true)
           setAuthFailed(false)
+          setEverConnected(true)
+          setConnectEpoch((n) => n + 1)
         }
         try {
           const msg: WsMessage = JSON.parse(event.data)
@@ -143,6 +161,7 @@ export function useWebSocket() {
           // slow retry (a restarted backend writes a new token that the
           // Electron bridge re-reads) and let the UI say why.
           setAuthFailed(true)
+          authFailedRef.current = true
           reconnectDelay.current = MAX_RECONNECT_INTERVAL
         }
         scheduleReconnect()
@@ -159,6 +178,10 @@ export function useWebSocket() {
   const scheduleReconnect = useCallback(() => {
     cleanup()
     if (!mountedRef.current) return
+    if (!everConnectedRef.current && !authFailedRef.current) {
+      reconnectTimer.current = setTimeout(connect, STARTUP_RETRY_INTERVAL)
+      return
+    }
     reconnectTimer.current = setTimeout(() => {
       reconnectDelay.current = Math.min(
         reconnectDelay.current * 1.5,
@@ -198,5 +221,5 @@ export function useWebSocket() {
     }
   }, [connect, cleanup])
 
-  return { connected, authFailed, subscribe, sendMessage }
+  return { connected, authFailed, everConnected, connectEpoch, subscribe, sendMessage }
 }

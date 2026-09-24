@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 // Preload script runs with `sandbox: true` so the full `node:*` surface
 // isn't available — keep this file to the minimum safe surface.
 //
-// Exposes two renderer-visible values:
+// Exposes these renderer-visible values:
 //   - version:         the app version, forwarded via `additionalArguments`
 //                      so the UI can read it synchronously (non-sensitive,
 //                      argv exposure is fine).
@@ -14,6 +14,10 @@ const { contextBridge, ipcRenderer } = require('electron')
 //                      processes via `ps aux` / `/proc/<pid>/cmdline`).
 //                      Used as the X-GPS-Token header for REST calls and
 //                      the first frame of every WebSocket connection.
+//   - getBackendPhase / onBackendPhase: the packaged backend's start-up
+//                      phase ('awaiting_auth' | 'starting' | 'exited', or
+//                      null in dev), so the UI can show a neutral "waiting
+//                      for the administrator password" state at launch.
 //
 // The previous auto-updater bridge (`geomirageUpdater`) was never
 // wired to any `ipcMain` handler and no renderer code consumed it, so
@@ -28,4 +32,10 @@ function readArg(prefix) {
 contextBridge.exposeInMainWorld('geoMirage', {
   version: readArg('--gps-version='),
   getSessionToken: () => ipcRenderer.invoke('session:get-token'),
+  getBackendPhase: () => ipcRenderer.invoke('backend:get-phase'),
+  onBackendPhase: (cb) => {
+    const handler = (_event, phase) => cb(phase)
+    ipcRenderer.on('backend:phase', handler)
+    return () => ipcRenderer.removeListener('backend:phase', handler)
+  },
 })

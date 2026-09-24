@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useState, useCallback, useMemo } from 'react'
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react'
 import { useBookmarks, type Bookmark, type BookmarkPlace, type BookmarkTag } from '../hooks/useBookmarks'
 import * as api from '../services/api'
 import { useToastContext } from './ToastContext'
+import { useConnectEpoch } from './WebSocketContext'
 import { useT } from '../i18n'
 import { useSerializedReorder } from '../hooks/useSerializedReorder'
 import { validateBookmarkImport } from '../lib/bookmark_helpers'
@@ -65,6 +66,15 @@ export function BookmarkProvider({ children }: { children: React.ReactNode }) {
   const t = useT()
   const { showToast } = useToastContext()
   const bm = useBookmarks()
+  const connectEpoch = useConnectEpoch()
+
+  // The mount fetch gives up after its retries while the backend is still
+  // starting (packaged macOS app waits on the password dialog) and never
+  // runs again, so re-fetch every time the WebSocket is accepted.
+  const refreshBookmarks = bm.refresh
+  useEffect(() => {
+    if (connectEpoch > 0) void refreshBookmarks()
+  }, [connectEpoch, refreshBookmarks])
 
   const [addBmDialog, setAddBmDialog] = useState<AddBmDialog | null>(null)
   const [importingBookmarks, setImportingBookmarks] = useState(false)

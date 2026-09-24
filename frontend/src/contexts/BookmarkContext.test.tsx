@@ -2,6 +2,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, cleanup, act, waitFor } from '@testing-library/react'
 import { BookmarkProvider, useBookmarkContext } from './BookmarkContext'
+import * as api from '../services/api'
+
+const ws = vi.hoisted(() => ({ epoch: 0 }))
+vi.mock('./WebSocketContext', () => ({ useConnectEpoch: () => ws.epoch }))
 
 const showToast = vi.fn()
 const reorderBookmarks = vi.fn()
@@ -26,6 +30,24 @@ vi.mock('../services/api', () => ({
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
+  ws.epoch = 0
+})
+
+describe('BookmarkProvider WebSocket reconnect', () => {
+  it('re-fetches bookmarks, places and tags each time a socket is accepted', async () => {
+    const { rerender } = render(<BookmarkProvider><span /></BookmarkProvider>)
+    await waitFor(() => expect(api.getBookmarks).toHaveBeenCalledTimes(1))
+
+    ws.epoch = 1
+    rerender(<BookmarkProvider><span /></BookmarkProvider>)
+    await waitFor(() => expect(api.getBookmarks).toHaveBeenCalledTimes(2))
+    expect(api.getPlaces).toHaveBeenCalledTimes(2)
+    expect(api.getTags).toHaveBeenCalledTimes(2)
+
+    ws.epoch = 2
+    rerender(<BookmarkProvider><span /></BookmarkProvider>)
+    await waitFor(() => expect(api.getBookmarks).toHaveBeenCalledTimes(3))
+  })
 })
 
 describe('BookmarkProvider reorder', () => {

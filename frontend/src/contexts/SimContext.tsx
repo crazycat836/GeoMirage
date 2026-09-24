@@ -124,7 +124,7 @@ export function SimProvider({ children }: SimProviderProps) {
   const t = useT()
   const device = useDeviceContext()
   const { showToast } = useToastContext()
-  const { subscribe, sendMessage } = useWebSocketContext()
+  const { subscribe, sendMessage, connectEpoch } = useWebSocketContext()
   // Stable translator: looks up the latest `t` via ref so the function
   // identity passed to `useSimulation` doesn't churn on every i18n
   // re-render and tear down the hook's WS subscriber.
@@ -136,7 +136,7 @@ export function SimProvider({ children }: SimProviderProps) {
   // Same primary as DeviceContext so the map pin / dock / space-bar and
   // the device UI agree on which phone is primary.
   const primaryUdid = device.primaryDevice?.udid ?? null
-  const sim = useSimulation(subscribe, { translateError, primaryUdid })
+  const sim = useSimulation(subscribe, { translateError, primaryUdid, connectEpoch })
 
   // Settings live in `SimSettingsContext`. Handlers below pull values
   // from there; consumers that read settings directly should call

@@ -13,10 +13,12 @@ import type { WsMessage } from './useWebSocket'
  *   design lost the intermediate one to React 18 auto-batching).
  * - `connected` stays false after onopen and only flips true once the
  *   FIRST server frame arrives (firstMessageReceivedRef).
- * - On close, a reconnect is scheduled at the current backoff delay; the
- *   delay grows 1.5x per cycle from RECONNECT_INTERVAL (3000) and caps
- *   at MAX_RECONNECT_INTERVAL (30000); the first server frame on a socket
- *   resets it (a bare TCP open does not).
+ * - Before any socket of the session has been accepted (backend still
+ *   starting), reconnects run at a flat STARTUP_RETRY_INTERVAL (1000).
+ * - After that, on close a reconnect is scheduled at the current backoff
+ *   delay; the delay grows 1.5x per cycle from RECONNECT_INTERVAL (3000) and
+ *   caps at MAX_RECONNECT_INTERVAL (30000); the first server frame on a
+ *   socket resets it (a bare TCP open does not).
  * - A close with code 4001 (backend auth rejected) sets `authFailed` and
  *   backs off straight to MAX_RECONNECT_INTERVAL.
  * - On open, an auth frame `{type:'auth', token}` is sent first, with the
@@ -29,6 +31,7 @@ import type { WsMessage } from './useWebSocket'
 // Mirrors RECONNECT_INTERVAL / MAX_RECONNECT_INTERVAL in useWebSocket.ts.
 const RECONNECT_INTERVAL = 3000
 const MAX_RECONNECT_INTERVAL = 30000
+const STARTUP_RETRY_INTERVAL = 1000
 
 class MockWebSocket {
   static readonly CONNECTING = 0
@@ -86,6 +89,12 @@ function latestSocket(): MockWebSocket {
   const instances = MockWebSocket.instances
   expect(instances.length).toBeGreaterThan(0)
   return instances[instances.length - 1]
+}
+
+// Get one socket accepted so the hook leaves its startup retry mode.
+async function acceptLatest(): Promise<void> {
+  await act(async () => { latestSocket().simulateOpen() })
+  act(() => { latestSocket().simulateServerFrame({ type: 'cooldown_update', data: {} }) })
 }
 
 function parseFrames(ws: MockWebSocket): Array<Record<string, unknown>> {
@@ -296,8 +305,34 @@ describe('useWebSocket — issue #5 regression (synchronous fan-out, no batching
 })
 
 describe('useWebSocket — reconnect backoff', () => {
-  it('schedules the first reconnect at RECONNECT_INTERVAL (3000ms) after close', () => {
+  it('retries at a flat STARTUP_RETRY_INTERVAL until a socket is first accepted', () => {
+    const { result } = renderHook(() => useWebSocket())
+    expect(result.current.everConnected).toBe(false)
+    for (let i = 1; i <= 5; i++) {
+      act(() => { latestSocket().simulateServerClose() })
+      act(() => { vi.advanceTimersByTime(STARTUP_RETRY_INTERVAL - 1) })
+      expect(MockWebSocket.instances).toHaveLength(i)
+      act(() => { vi.advanceTimersByTime(1) })
+      expect(MockWebSocket.instances).toHaveLength(i + 1)
+    }
+  })
+
+  it('bumps connectEpoch and sets everConnected on each accepted socket', async () => {
+    const { result } = renderHook(() => useWebSocket())
+    expect(result.current.connectEpoch).toBe(0)
+    await acceptLatest()
+    expect(result.current.everConnected).toBe(true)
+    expect(result.current.connectEpoch).toBe(1)
+    act(() => { latestSocket().simulateServerClose() })
+    expect(result.current.everConnected).toBe(true)
+    act(() => { vi.advanceTimersByTime(RECONNECT_INTERVAL) })
+    await acceptLatest()
+    expect(result.current.connectEpoch).toBe(2)
+  })
+
+  it('schedules the first reconnect at RECONNECT_INTERVAL (3000ms) after close', async () => {
     renderHook(() => useWebSocket())
+    await acceptLatest()
     const ws = latestSocket()
 
     act(() => {
@@ -314,8 +349,9 @@ describe('useWebSocket — reconnect backoff', () => {
     expect(MockWebSocket.instances).toHaveLength(2)
   })
 
-  it('grows the delay 1.5x per failed cycle and caps at MAX_RECONNECT_INTERVAL (30000ms)', () => {
+  it('grows the delay 1.5x per failed cycle and caps at MAX_RECONNECT_INTERVAL (30000ms)', async () => {
     renderHook(() => useWebSocket())
+    await acceptLatest()
 
     // Delay is multiplied AFTER each timer fires, so cycle N waits the
     // pre-multiplication value: 3000, 4500, 6750, ... capped at 30000.
@@ -342,6 +378,7 @@ describe('useWebSocket — reconnect backoff', () => {
 
   it('resets the backoff to RECONNECT_INTERVAL once the server sends a frame', async () => {
     renderHook(() => useWebSocket())
+    await acceptLatest()
 
     // Grow the backoff through two failed cycles (3000ms, then 4500ms).
     act(() => {
@@ -382,6 +419,7 @@ describe('useWebSocket — reconnect backoff', () => {
 describe('useWebSocket — auth rejected (close code 4001)', () => {
   it('does not reset the backoff on a bare open that the server then closes', async () => {
     renderHook(() => useWebSocket())
+    await acceptLatest()
     act(() => { latestSocket().simulateServerClose() })
     act(() => { vi.advanceTimersByTime(3000) })
     expect(MockWebSocket.instances).toHaveLength(2)

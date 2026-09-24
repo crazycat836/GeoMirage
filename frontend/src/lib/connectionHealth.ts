@@ -6,9 +6,22 @@
 // transport, DeviceHealth describes the domain, and the combined
 // `ConnectionHealth` is what consumers consume.
 
-export type WsState = 'open' | 'reconnecting' | 'offline'
+// 'starting' = no socket of this app session has been accepted yet (the
+// backend is still starting, or waiting on the macOS password dialog). It
+// never escalates to 'offline' by time alone.
+export type WsState = 'open' | 'starting' | 'reconnecting' | 'offline'
 export type DeviceHealth = 'connected' | 'lost' | 'none' | 'stale'
-export type HealthHint = null | 'ws_reconnecting' | 'ws_offline' | 'ws_auth_failed' | 'device_lost'
+export type HealthHint =
+  | null
+  | 'ws_starting'
+  | 'ws_awaiting_auth'
+  | 'ws_reconnecting'
+  | 'ws_offline'
+  | 'ws_auth_failed'
+  | 'device_lost'
+/** Packaged-app backend start-up phase reported by Electron main; null in
+ *  dev / browser runs. */
+export type BackendPhase = 'awaiting_auth' | 'starting' | 'exited' | null
 
 export interface ConnectionHealth {
   ws: WsState
@@ -41,6 +54,11 @@ export interface DeriveInput {
   now: number
   connectedCount: number
   lostCount: number
+  /** False until the first socket of this session is accepted. Defaults to
+   *  true (plain reconnect semantics). */
+  everConnected?: boolean
+  /** Electron's backend start-up phase, when known. */
+  backendPhase?: BackendPhase
   /** Override for tests; defaults to `OFFLINE_THRESHOLD_MS`. */
   offlineThresholdMs?: number
 }
@@ -49,9 +67,12 @@ export function deriveConnectionHealth(input: DeriveInput): ConnectionHealth {
   const { wsConnected, disconnectedAt, now, connectedCount, lostCount } = input
   const threshold = input.offlineThresholdMs ?? OFFLINE_THRESHOLD_MS
 
+  const everConnected = input.everConnected ?? true
   let ws: WsState
   if (wsConnected) {
     ws = 'open'
+  } else if (!everConnected && input.backendPhase !== 'exited') {
+    ws = 'starting'
   } else {
     const offlineMs = disconnectedAt == null ? 0 : Math.max(0, now - disconnectedAt)
     ws = offlineMs >= threshold ? 'offline' : 'reconnecting'
@@ -76,6 +97,7 @@ export function deriveConnectionHealth(input: DeriveInput): ConnectionHealth {
   // An auth rejection won't fix itself by waiting, so it replaces the
   // generic reconnecting/offline copy with an actionable one.
   if (ws !== 'open' && input.wsAuthFailed) hint = 'ws_auth_failed'
+  else if (ws === 'starting') hint = input.backendPhase === 'awaiting_auth' ? 'ws_awaiting_auth' : 'ws_starting'
   else if (ws === 'offline') hint = 'ws_offline'
   else if (ws === 'reconnecting') hint = 'ws_reconnecting'
   else if (device === 'lost') hint = 'device_lost'

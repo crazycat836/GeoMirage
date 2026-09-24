@@ -484,7 +484,9 @@ function AppShell() {
           onOpenDevices={openDevicesPanel}
           onSaveRoute={openSaveRoute}
         />
-        <UpdateChecker />
+        {/* Held back until the backend has answered once, so the update
+            prompt doesn't pile onto the start-up password dialog. */}
+        {health.ws !== 'starting' && <UpdateChecker />}
       </div>
 
       {/* Floating overlay components — siblings of the map container so

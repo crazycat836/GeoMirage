@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import * as api from '../services/api'
 import type { SavedRoute, RouteCategory, RouteConflictPolicy } from '../services/api'
 import { useToastContext } from './ToastContext'
+import { useConnectEpoch } from './WebSocketContext'
 import { useT } from '../i18n'
 import { devLog } from '../lib/dev-log'
 import { useSerializedReorder } from '../hooks/useSerializedReorder'
@@ -68,9 +69,13 @@ export function RouteLibraryProvider({ children }: { children: React.ReactNode }
   const [savedRoutes, setSavedRoutes] = useState<SavedRoute[]>([])
   const [routeCategories, setRouteCategories] = useState<RouteCategory[]>([])
   const [routesLoading, setRoutesLoading] = useState(true)
+  const connectEpoch = useConnectEpoch()
 
-  // Initial fetch — mount-only by design (re-fetching on language change,
-  // which would re-create `t`, isn't wanted).
+  // Fetch on mount and again each time the WebSocket is accepted: the mount
+  // fetch gives up while the backend is still starting (packaged macOS app
+  // waits on the password dialog), and a restarted backend should be
+  // re-read. Deliberately not keyed on `t` (a language change would
+  // re-create it).
   useEffect(() => {
     api.getSavedRoutes()
       .then(setSavedRoutes)
@@ -81,7 +86,7 @@ export function RouteLibraryProvider({ children }: { children: React.ReactNode }
       .finally(() => setRoutesLoading(false))
     api.getRouteCategories().then(setRouteCategories).catch((err) => devLog('Failed to load route categories', err))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [connectEpoch])
 
   const handleRouteLoad = useCallback((id: string): {
     waypoints: { lat: number; lng: number }[]

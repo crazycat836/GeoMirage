@@ -143,11 +143,18 @@ export interface UseSimulationOptions {
    * follow it; null/omitted falls back to the first runtime entry.
    */
   primaryUdid?: string | null
+  /**
+   * `useWebSocket().connectEpoch`: bumped on every accepted socket. The
+   * status / last-position seed re-runs on each bump so a backend that was
+   * still starting at mount (or restarted) is re-read.
+   */
+  connectEpoch?: number
 }
 
 export function useSimulation(subscribe?: WsSubscribe, options?: UseSimulationOptions) {
   const translateError = options?.translateError
   const primaryUdid = options?.primaryUdid ?? null
+  const connectEpoch = options?.connectEpoch ?? 0
   // Latest translator in a ref so the WS subscribe effect can call it
   // without listing `translateError` in its deps (which would otherwise
   // tear down + rebuild the subscriber every time the i18n language flips).
@@ -590,7 +597,8 @@ export function useSimulation(subscribe?: WsSubscribe, options?: UseSimulationOp
     return res
   }, [moveMode, customSpeedKmh, speedMinKmh, speedMaxKmh])
 
-  // Fetch initial status on mount.
+  // Fetch initial status on mount, and again whenever a WebSocket is
+  // accepted (`connectEpoch`).
   //
   // Sequence (single async/await chain so failures and the secondary
   // last-position fetch share one top-level try/catch):
@@ -669,8 +677,8 @@ export function useSimulation(subscribe?: WsSubscribe, options?: UseSimulationOp
       aborted = true
     }
     // patchPrimaryRuntime is a stable useCallback — listing it keeps the
-    // deps honest without re-running the mount fetch.
-  }, [patchPrimaryRuntime])
+    // deps honest without re-running the fetch; connectEpoch re-runs it.
+  }, [patchPrimaryRuntime, connectEpoch])
 
   // ── Group-mode fan-out helpers ──────────────────────────────────────
   // Extracted to useSimGroupActions. Each takes an explicit list of udids

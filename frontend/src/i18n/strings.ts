@@ -74,6 +74,8 @@ export const STRINGS = {
   'toast.route_unavailable': { zh: '路線規劃失敗:{msg}', en: 'Route planning failed: {msg}' },
 
   // ── Connection health (banner + stale visuals) ───────────
+  'conn.ws_starting': { zh: '背景服務啟動中…', en: 'Starting the backend…' },
+  'conn.ws_awaiting_auth': { zh: '等待輸入管理員密碼…', en: 'Waiting for the administrator password…' },
   'conn.ws_reconnecting': { zh: '與背景服務連線中…', en: 'Reconnecting to backend…' },
   'conn.ws_offline': { zh: '背景服務無回應', en: 'Backend unreachable' },
   'conn.ws_offline_hint': { zh: '請確認 App 未被關閉,或重新啟動程式', en: 'Check that the app is still running, or restart it' },

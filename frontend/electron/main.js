@@ -64,6 +64,23 @@ Menu.setApplicationMenu(null)
 let mainWindow
 let backendProc = null
 
+// Where the packaged backend is in its start-up, pushed to the renderer so
+// the not-yet-connected banner can say what it is waiting on:
+//   'awaiting_auth' — macOS administrator-password dialog is up
+//   'starting'      — a backend process has been launched
+//   'exited'        — the unprivileged backend process quit
+// Stays null in dev, where the backend is started by hand.
+let backendPhase = null
+
+function setBackendPhase(phase) {
+  backendPhase = phase
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('backend:phase', phase)
+  }
+}
+
+ipcMain.handle('backend:get-phase', () => backendPhase)
+
 function resolveBackendExe() {
   // In a packaged build, extraResources places files under
   // process.resourcesPath (e.g. .../resources/backend/<binary>). PyInstaller
@@ -106,10 +123,14 @@ function startBackendElevated(exe) {
   )
   console.log('[electron] starting backend with administrator rights:', exe)
   elevatedBackendStarted = true
+  setBackendPhase('awaiting_auth')
   const osa = spawn('/usr/bin/osascript', ['-e', script], { stdio: ['ignore', 'ignore', 'pipe'] })
   osa.stderr.on('data', (d) => process.stderr.write(`[osascript] ${d}`))
   osa.on('exit', (code) => {
-    if (code === 0) return
+    if (code === 0) {
+      setBackendPhase('starting')
+      return
+    }
     // Declined or failed: run unprivileged so the UI and iOS 16 and older
     // devices still work.
     console.warn('[electron] administrator start declined (code %s) — starting unprivileged', code)
@@ -142,11 +163,13 @@ function spawnBackend(exe) {
     spawnOpts.windowsHide = true
   }
   backendProc = spawn(exe, [], spawnOpts)
+  setBackendPhase('starting')
   backendProc.stdout.on('data', (d) => process.stdout.write(`[backend] ${d}`))
   backendProc.stderr.on('data', (d) => process.stderr.write(`[backend] ${d}`))
   backendProc.on('exit', (code) => {
     console.log('[electron] backend exited with code', code)
     backendProc = null
+    setBackendPhase('exited')
   })
 }
 

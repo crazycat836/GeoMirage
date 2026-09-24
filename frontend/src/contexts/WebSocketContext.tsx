@@ -24,6 +24,16 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   return <WebSocketContext.Provider value={ws}>{children}</WebSocketContext.Provider>
 }
 
+/**
+ * Bumped each time a socket is accepted (the first connect included).
+ * Providers that seed state over REST put it in effect deps to re-fetch
+ * after the backend comes (back) up. Returns 0 outside a provider so
+ * isolated tests of those providers need no socket.
+ */
+export function useConnectEpoch(): number {
+  return useContext(WebSocketContext)?.connectEpoch ?? 0
+}
+
 export function useWebSocketContext(): WsContextValue {
   const ctx = useContext(WebSocketContext)
   if (!ctx) throw new Error('useWebSocketContext must be used within WebSocketProvider')
