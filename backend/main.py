@@ -478,21 +478,36 @@ async def root():
 
 
 
+def run() -> None:
+    """Bind the API port, then serve.
+
+    Server is built by hand (rather than uvicorn.run) so the launcher
+    watch can reach ``should_exit`` — see core/parent_watch.py.
+
+    The port is bound before ``server.run`` because uvicorn runs the
+    lifespan startup (which writes a fresh session token) before it
+    binds. A second instance that can't get the port must exit here,
+    before it replaces the running backend's token and locks the
+    renderer out of WebSocket reconnects. ``bind_socket`` exits the
+    process on failure.
+    """
+    config = uvicorn.Config(
+        app,
+        host=API_HOST,
+        port=API_PORT,
+        reload=False,
+        log_config=UVICORN_LOG_CONFIG,
+    )
+    sock = config.bind_socket()
+    server = uvicorn.Server(config)
+    app.state.uvicorn_server = server
+    server.run(sockets=[sock])
+
+
 if __name__ == "__main__":
     # Pass the app object, not the "main:app" import string: in the
     # PyInstaller build this file runs as the entry script and is not
     # importable as a module, so the string form fails at startup with
     # 'Could not import module "main"'. Reload is off, so nothing needs
     # the string form.
-    #
-    # Server is built by hand (rather than uvicorn.run) so the launcher
-    # watch can reach ``should_exit`` — see core/parent_watch.py.
-    server = uvicorn.Server(uvicorn.Config(
-        app,
-        host=API_HOST,
-        port=API_PORT,
-        reload=False,
-        log_config=UVICORN_LOG_CONFIG,
-    ))
-    app.state.uvicorn_server = server
-    server.run()
+    run()

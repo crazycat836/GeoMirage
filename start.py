@@ -156,10 +156,16 @@ def is_port_open(port):
         return False
 
 
-def wait_for_port(port, label, timeout=60):
+def wait_for_port(port, label, timeout=60, proc=None):
     print(f"      等待{label}啟動中", end="", flush=True)
     start = time.time()
     while time.time() - start < timeout:
+        # The port may be held by another instance (e.g. a root backend
+        # this user can't see or kill), so an open port alone doesn't
+        # prove *our* process started.
+        if proc is not None and proc.poll() is not None:
+            print(f" 失敗！行程已結束（exit code {proc.returncode}）")
+            return False
         if is_port_open(port):
             print(" OK ✓")
             return True
@@ -240,6 +246,15 @@ def start_backend():
         print(f"      Port {BACKEND_PORT} 被佔用，清理中...")
         kill_port(BACKEND_PORT)
         time.sleep(1)
+        if is_port_open(BACKEND_PORT):
+            # Held by a process we can't see or kill (e.g. a backend the
+            # packaged app started as root). Starting another would only
+            # fail to bind, so stop here instead of reporting success.
+            print(
+                f"      Port {BACKEND_PORT} 仍被其他行程佔用（可能是以管理員權限"
+                "執行的 GeoMirage），請先關閉它再重試。"
+            )
+            return False
 
     # Dev mode: leave the session token check on by default. The launcher
     # used to silently set GEOMIRAGE_DEV_NOAUTH=1 here so `vite dev`
@@ -266,7 +281,7 @@ def start_backend():
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
     )
     procs.append(p)
-    return wait_for_port(BACKEND_PORT, "後端")
+    return wait_for_port(BACKEND_PORT, "後端", proc=p)
 
 
 def start_frontend():
@@ -301,7 +316,7 @@ def start_frontend():
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
     )
     procs.append(p)
-    return wait_for_port(FRONTEND_PORT, "前端")
+    return wait_for_port(FRONTEND_PORT, "前端", proc=p)
 
 
 def cleanup():
