@@ -285,6 +285,7 @@ async def reannounce_connected(
     *,
     cause: str,
     disconnect_cause: str,
+    metadata: dict[str, Any] | None = None,
 ) -> None:
     """Re-announce *udid* as CONNECTED after its transport was swapped
     out from under it (today: USB → WiFi-tunnel fallback).
@@ -300,8 +301,13 @@ async def reannounce_connected(
     final CONNECTED announce. This is the public face of the transition
     pair — callers must not drive :data:`store` (or
     :func:`_collect_metadata`) directly.
+
+    Pass ``metadata`` when the caller already holds it. After a USB →
+    WiFi swap the device has left usbmux, so :func:`_collect_metadata`
+    would find nothing and the announce would carry empty defaults.
     """
-    metadata = await _collect_metadata(dm, udid)
+    if metadata is None:
+        metadata = await _collect_metadata(dm, udid)
     await store.transition(
         udid, DeviceState.DISCONNECTED, cause=disconnect_cause,
     )

@@ -24,7 +24,7 @@ import sys
 from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -256,3 +256,69 @@ def test_cleanup_swallows_per_udid_failures(monkeypatch):
 
     # Both UDIDs were attempted even though udid-A failed.
     assert disconnect_mock.await_count == 2
+
+
+# ─── reconnect_usb_over_wifi metadata ────────────────────────────────
+
+
+def test_usb_to_wifi_fallback_announces_tunnel_metadata(monkeypatch):
+    """After USB→WiFi fallback the unplugged device is gone from usbmux,
+    so metadata must come from the tunnel's own DeviceInfo. Otherwise the
+    re-announce broadcast ``name ""`` / ``connection_type "USB"`` and
+    ``/api/device/list`` replayed the same wrong values."""
+    from api.device import list_devices
+    from context import ctx
+    from models.schemas import DeviceInfo
+    from services import connection_state
+    from services import wifi_tunnel_service as svc
+    from services.connection_state import DeviceState, store
+
+    new_info = DeviceInfo(
+        udid="u1", name="Gary iPhone", ios_version="26.5",
+        connection_type="Network", is_connected=True,
+    )
+    dm = MagicMock()
+    dm.disconnect = AsyncMock()
+    dm.connect_wifi_tunnel = AsyncMock(return_value=new_info)
+    dm.discover_devices = AsyncMock(return_value=[])  # USB unplugged
+    app_state = SimpleNamespace(
+        device_manager=dm,
+        terminate_engine=AsyncMock(),
+        create_engine_for_device=AsyncMock(),
+    )
+    monkeypatch.setattr(ctx, "app_state", app_state, raising=False)
+
+    fake_tunnel = SimpleNamespace(
+        is_running=lambda: True,
+        transport_alive=lambda: True,
+        info={"rsd_address": "fd00::1", "rsd_port": 5555},
+    )
+    monkeypatch.setattr(svc, "tunnel", fake_tunnel)
+
+    async def _run():
+        connection_state.install_ws_observer()
+        await store.transition(
+            "u1", DeviceState.CONNECTED, cause="auto_usb",
+            metadata={"name": "Gary iPhone", "ios_version": "26.5", "connection_type": "USB"},
+        )
+        with patch("services.connection_state.broadcast", new=AsyncMock()) as mock_bcast:
+            ok = await svc.reconnect_usb_over_wifi("u1")
+        listed = await list_devices()
+        return ok, mock_bcast, listed
+
+    ok, mock_bcast, listed = asyncio.run(_run())
+
+    assert ok is True
+    connected = [
+        c.args[1] for c in mock_bcast.await_args_list
+        if c.args and c.args[0] == "device_connected"
+    ]
+    assert connected == [{
+        "udid": "u1",
+        "name": "Gary iPhone",
+        "ios_version": "26.5",
+        "connection_type": "Network",
+    }]
+    assert [(d.udid, d.name, d.ios_version, d.connection_type) for d in listed] == [
+        ("u1", "Gary iPhone", "26.5", "Network"),
+    ]

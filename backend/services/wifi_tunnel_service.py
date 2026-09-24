@@ -208,6 +208,13 @@ async def reconnect_usb_over_wifi(udid: str) -> bool:
         dm, udid,
         cause="usb_to_wifi_fallback",
         disconnect_cause="usb_removed_pre_wifi_fallback",
+        # The unplugged device is no longer in usbmux, so use the
+        # tunnel's own DeviceInfo instead of re-discovering.
+        metadata={
+            "name": new_info.name or "",
+            "ios_version": new_info.ios_version or "",
+            "connection_type": "Network",
+        },
     )
     logger.info("USB→WiFi fallback succeeded for %s (now Network)", udid)
     return True
