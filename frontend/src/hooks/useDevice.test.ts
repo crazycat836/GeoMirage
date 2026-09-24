@@ -9,9 +9,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DeviceInfo } from '../types/device'
 import type { WsMessage } from './useWebSocket'
 
-const listDevices = vi.fn<() => Promise<DeviceInfo[]>>()
+const listDevices = vi.fn<(opts?: unknown) => Promise<DeviceInfo[]>>()
 vi.mock('../services/api', () => ({
-  listDevices: () => listDevices(),
+  listDevices: (opts?: unknown) => listDevices(opts),
   connectDevice: vi.fn(),
   disconnectDevice: vi.fn(),
   forgetDevice: vi.fn(),
@@ -66,6 +66,34 @@ describe('useDevice.scan', () => {
     await act(async () => { await result.current.scan() })
     expect(result.current.devices).toHaveLength(1)
     expect(result.current.connectedDevice?.udid).toBe(A.udid)
+  })
+})
+
+describe('useDevice.scan failures', () => {
+  it('a manual scan rejects when the backend is unreachable, so the UI can tell it from "none found"', async () => {
+    listDevices.mockRejectedValue(new TypeError('Failed to fetch'))
+    const { result } = renderHook(() => useDevice(fakeWs().subscribe))
+    let caught: unknown = null
+    await act(async () => {
+      await result.current.scan().catch((e: unknown) => { caught = e })
+    })
+    expect(caught).toBeInstanceOf(Error)
+    expect(result.current.scanning).toBe(false)
+  })
+
+  it('a manual scan uses the fast-fail request policy', async () => {
+    listDevices.mockResolvedValue([])
+    const { result } = renderHook(() => useDevice(fakeWs().subscribe))
+    await act(async () => { await result.current.scan() })
+    expect(listDevices).toHaveBeenCalledWith({ fast: true })
+  })
+
+  it('a background poll stays silent on failure', async () => {
+    listDevices.mockRejectedValue(new TypeError('Failed to fetch'))
+    const { result } = renderHook(() => useDevice(fakeWs().subscribe))
+    let list: unknown = null
+    await act(async () => { list = await result.current.scan({ poll: true }) })
+    expect(list).toEqual([])
   })
 })
 

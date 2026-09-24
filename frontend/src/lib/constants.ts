@@ -145,6 +145,15 @@ export const RETRY_BACKOFF_MAX_MS = 2000
 export const REQUEST_TIMEOUT_MS = 130_000
 
 /**
+ * Retry policy for user-initiated reads that should report "backend not
+ * ready" quickly (manual device scan): 3 attempts (~1.3 s of backoff when
+ * the port refuses) and a 15 s per-attempt cap for a backend that accepts
+ * but never answers. /api/device/list does one lockdown query per device,
+ * which takes seconds, not tens of seconds.
+ */
+export const FAST_FAIL_REQUEST = { maxAttempts: 3, timeoutMs: 15_000 } as const
+
+/**
  * Minimum on-screen time for the "Clearing virtual location…" toast in
  * `SimContext.handleRestore`. Restore can complete in <100ms on a healthy
  * USB link; the user wouldn't see the toast at all otherwise.

@@ -55,7 +55,9 @@ export default function DeviceListView({ onClose, onManage, onAdd }: DeviceListV
   const { showToast } = useToastContext()
 
   const [scanning, setScanning] = useState(false)
-  const [scanResult, setScanResult] = useState<number | null>(null)
+  // Device count from the last manual scan, 'error' when it couldn't reach
+  // the backend, null when no result pill is showing.
+  const [scanResult, setScanResult] = useState<number | 'error' | null>(null)
   const scanTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // UDID currently being connected — drives the per-row spinner and keeps the
   // popover open until connect resolves (was fire-and-forget + instant close,
@@ -63,6 +65,15 @@ export default function DeviceListView({ onClose, onManage, onAdd }: DeviceListV
   const [connectingUdid, setConnectingUdid] = useState<string | null>(null)
 
   useEffect(() => () => { if (scanTimer.current) clearTimeout(scanTimer.current) }, [])
+
+  // Scan once, quietly, whenever the list opens: a phone plugged in since
+  // the last poll shows up without pressing Scan (the backend deliberately
+  // doesn't broadcast USB plug-ins). Pure observation — /api/device/list
+  // never pairs or connects.
+  const scanDevices = device.scan
+  useEffect(() => {
+    scanDevices({ poll: true }).catch(() => { /* logged inside scan */ })
+  }, [scanDevices])
 
   const handleConnect = useCallback(async (udid: string) => {
     if (connectingUdid) return
@@ -88,13 +99,15 @@ export default function DeviceListView({ onClose, onManage, onAdd }: DeviceListV
     // by a setState the React effect commits on the next render, so
     // reading it from a ref in `finally` would yield a stale count for
     // the freshly-scanned devices.
-    let count = 0
+    let outcome: number | 'error' = 'error'
     try {
       const list = await device.scan()
-      count = list.length
+      outcome = list.length
+    } catch {
+      // Backend unreachable / not ready — not the same as "no device".
     } finally {
       setScanning(false)
-      setScanResult(count)
+      setScanResult(outcome)
       scanTimer.current = setTimeout(() => setScanResult(null), SCAN_RESULT_VISIBLE_MS)
     }
   }, [device])
@@ -121,6 +134,8 @@ export default function DeviceListView({ onClose, onManage, onAdd }: DeviceListV
           >
             {scanning ? (
               <><Loader2 className="w-3 h-3 animate-spin" /> {t('device.scan_scanning')}</>
+            ) : scanResult === 'error' ? (
+              <><XCircle className="w-3 h-3 text-[var(--color-error-text)]" /> {t('device.scan_backend_not_ready')}</>
             ) : scanResult != null && scanResult > 0 ? (
               <><Check className="w-3 h-3 text-[var(--color-success-text)]" /> {t('device.scan_found', { n: scanResult })}</>
             ) : scanResult === 0 ? (
@@ -143,8 +158,18 @@ export default function DeviceListView({ onClose, onManage, onAdd }: DeviceListV
 
       <div className="p-1.5 max-h-[320px] overflow-y-auto scrollbar-thin">
         {device.devices.length === 0 ? (
-          <div className="py-10 px-4 text-center text-[12px] text-[var(--color-text-3)]">
-            {t('device.no_device')}
+          <div className="py-8 px-4 flex flex-col items-center gap-2 text-center text-[12px] text-[var(--color-text-3)]">
+            <span>{t('device.no_device')}</span>
+            <span>{t('device.no_device_hint')}</span>
+            <button
+              type="button"
+              onClick={handleScan}
+              disabled={scanning}
+              className="action-btn mt-1 inline-flex items-center gap-1"
+            >
+              {scanning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Scan className="w-3 h-3" />}
+              {t('device.scan_now')}
+            </button>
           </div>
         ) : (
           device.devices.map((d, idx) => {

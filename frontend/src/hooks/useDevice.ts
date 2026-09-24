@@ -73,7 +73,7 @@ export function useDevice(subscribe?: WsSubscribe) {
     // a WS event that lands meanwhile is newer than this answer.
     const wsGen = wsEventGenRef.current
     try {
-      const result = await listDevices()
+      const result = await listDevices(isPoll ? undefined : { fast: true })
       const list: DeviceInfo[] = Array.isArray(result) ? result : []
       if (wsEventGenRef.current !== wsGen) return list
       // Skip the setState when every visible field matches — avoids
@@ -90,6 +90,9 @@ export function useDevice(subscribe?: WsSubscribe) {
       return list
     } catch (err) {
       devWarn('Failed to scan devices:', err)
+      // A manual scan rethrows so the UI can say "backend not ready"
+      // rather than "no device found"; background polls stay silent.
+      if (!isPoll) throw err
       return []
     } finally {
       if (!isPoll) setScanning(false)

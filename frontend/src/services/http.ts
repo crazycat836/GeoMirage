@@ -37,13 +37,23 @@ const API = API_BASE
 // backend that accepts the socket but never answers can't hang the call
 // forever. A timeout is treated differently from connection-refused: it is
 // NOT retried either, for the same non-idempotency reason.
-async function fetchWithRetry(url: string, opts: RequestInit, maxAttempts = 15): Promise<Response> {
+/** Per-call override of the GET retry count and per-attempt timeout. Used by
+ *  user-initiated calls that should fail fast (e.g. a manual device scan)
+ *  instead of riding out ~25 s of retries. */
+export interface RetryPolicy {
+  maxAttempts?: number
+  timeoutMs?: number
+}
+
+async function fetchWithRetry(url: string, opts: RequestInit, policy?: RetryPolicy): Promise<Response> {
+  const maxAttempts = policy?.maxAttempts ?? 15
+  const timeoutMs = policy?.timeoutMs ?? REQUEST_TIMEOUT_MS
   // `fetch` defaults to GET when no method is given.
   const isRetryable = (opts.method ?? 'GET').toUpperCase() === 'GET'
   let lastErr: unknown
   for (let i = 0; i < maxAttempts; i++) {
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
     try {
       return await fetch(url, { ...opts, signal: controller.signal })
     } catch (e) {
@@ -258,12 +268,13 @@ function invalidateAuthToken(): void {
 export async function authedFetch(
   url: string,
   buildInit: (headers: Record<string, string>) => RequestInit,
+  retry?: RetryPolicy,
 ): Promise<Response> {
   const attempt = async (): Promise<Response> => {
     const headers: Record<string, string> = {}
     const token = await getAuthToken()
     if (token) headers['X-GPS-Token'] = token
-    return fetchWithRetry(url, buildInit(headers))
+    return fetchWithRetry(url, buildInit(headers), retry)
   }
   const res = await attempt()
   if (res.status !== 401) return res
@@ -303,6 +314,7 @@ export async function request<T>(
   path: string,
   body?: unknown,
   extraHeaders?: Record<string, string>,
+  retry?: RetryPolicy,
 ): Promise<T> {
   const started = Date.now()
   let status: number | undefined
@@ -315,7 +327,7 @@ export async function request<T>(
       const opts: RequestInit = { method, headers }
       if (body !== undefined) opts.body = JSON.stringify(body)
       return opts
-    })
+    }, retry)
     status = res.status
     const data = await unwrapEnvelope<T>(res)
     ok = true

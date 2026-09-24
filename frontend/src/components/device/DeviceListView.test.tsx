@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, cleanup, screen, fireEvent } from '@testing-library/react'
+import { render, cleanup, screen, fireEvent, act } from '@testing-library/react'
 import type { DeviceInfo } from '../../types/device'
 
 const state = vi.hoisted(() => ({
@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
   everConnectedUdids: new Set<string>(),
   runtimes: {} as Record<string, { tunnelDegraded?: boolean }>,
   connect: vi.fn(async () => null),
+  scan: vi.fn(async (): Promise<DeviceInfo[]> => []),
 }))
 
 vi.mock('../../contexts/DeviceContext', () => ({
@@ -22,7 +23,7 @@ vi.mock('../../contexts/DeviceContext', () => ({
       connectedDevice: connectedDevices[0] ?? null,
       lostUdids: state.lostUdids,
       everConnectedUdids: state.everConnectedUdids,
-      scan: vi.fn(),
+      scan: state.scan,
       connect: state.connect,
     }
   },
@@ -55,6 +56,8 @@ afterEach(() => {
   state.everConnectedUdids = new Set()
   state.runtimes = {}
   state.connect.mockClear()
+  state.scan.mockReset()
+  state.scan.mockResolvedValue([])
 })
 
 describe('DeviceListView status', () => {
@@ -105,5 +108,38 @@ describe('DeviceListView row click', () => {
     render(<DeviceListView onClose={vi.fn()} onManage={vi.fn()} onAdd={vi.fn()} />)
     fireEvent.click(screen.getByText('Phone A').closest('button')!)
     expect(state.connect).toHaveBeenCalledWith('a')
+  })
+})
+
+describe('DeviceListView scan', () => {
+  function renderList() {
+    return render(<DeviceListView onClose={vi.fn()} onManage={vi.fn()} onAdd={vi.fn()} />)
+  }
+
+  it('scans quietly as soon as it opens', async () => {
+    await act(async () => { renderList() })
+    expect(state.scan).toHaveBeenCalledWith({ poll: true })
+  })
+
+  it('empty state tells the user to plug in and scan, with a scan button', async () => {
+    await act(async () => { renderList() })
+    expect(screen.getByText('device.no_device_hint')).toBeTruthy()
+    state.scan.mockClear()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /device\.scan_now/ })) })
+    expect(state.scan).toHaveBeenCalledWith()
+  })
+
+  it('shows "backend not ready" when a manual scan fails', async () => {
+    await act(async () => { renderList() })
+    state.scan.mockRejectedValue(new TypeError('Failed to fetch'))
+    await act(async () => { fireEvent.click(screen.getByTitle('device.scan_tooltip')) })
+    expect(screen.getByText(/device\.scan_backend_not_ready/)).toBeTruthy()
+    expect(screen.queryByText(/device\.scan_none/)).toBeNull()
+  })
+
+  it('still shows "not found" when a manual scan succeeds with no devices', async () => {
+    await act(async () => { renderList() })
+    await act(async () => { fireEvent.click(screen.getByTitle('device.scan_tooltip')) })
+    expect(screen.getByText(/device\.scan_none/)).toBeTruthy()
   })
 })

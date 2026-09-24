@@ -1,5 +1,5 @@
 /** Device discovery / pairing / WiFi-tunnel endpoints (`/api/device/*`). */
-import { DEFAULT_TUNNEL_PORT } from '../lib/constants'
+import { DEFAULT_TUNNEL_PORT, FAST_FAIL_REQUEST } from '../lib/constants'
 import type { DeviceInfo } from '../types/device'
 import { request, type StatusResponse } from './http'
 
@@ -11,7 +11,10 @@ export interface WifiTunnelStatus {
   rsd_port?: number
 }
 
-export const listDevices = () => request<DeviceInfo[]>('GET', '/api/device/list')
+/** `fast`: fail within a few seconds when the backend is down or wedged
+ *  (manual scan), instead of the default ~25 s retry / 130 s timeout. */
+export const listDevices = (opts?: { fast?: boolean }) =>
+  request<DeviceInfo[]>('GET', '/api/device/list', undefined, undefined, opts?.fast ? FAST_FAIL_REQUEST : undefined)
 export const connectDevice = (udid: string) => request<StatusResponse>('POST', `/api/device/${udid}/connect`)
 export const disconnectDevice = (udid: string) => request<StatusResponse>('DELETE', `/api/device/${udid}/connect`)
 export const forgetDevice = (udid: string) =>
