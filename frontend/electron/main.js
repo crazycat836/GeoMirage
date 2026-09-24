@@ -3,6 +3,7 @@ const path = require('path')
 const os = require('os')
 const fs = require('fs')
 const { spawn } = require('child_process')
+const { buildElevatedBackendCommand, buildElevatedBackendScript } = require('./backend-command')
 
 // Single source of truth for the app version — same file Electron already
 // consumes for `app.getVersion()` / auto-updater metadata.
@@ -56,16 +57,6 @@ function resolveBackendExe() {
   return path.join(process.resourcesPath, 'backend', binName)
 }
 
-// POSIX single-quote a value for /bin/sh.
-function shQuote(value) {
-  return `'${String(value).replace(/'/g, `'\\''`)}'`
-}
-
-// Quote a value as an AppleScript string literal.
-function appleScriptQuote(value) {
-  return `"${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
-}
-
 // macOS: the iOS 17+ device tunnel needs root, and an .app has no
 // equivalent of the Windows `requireAdministrator` manifest. Ask for an
 // administrator password through the system dialog and start the backend
@@ -81,22 +72,18 @@ let elevatedBackendStarted = false
 
 function startBackendElevated(exe) {
   const { uid, gid } = os.userInfo()
-  // The redirect covers the whole group: `do shell script` waits for every
-  // holder of its output pipe, including the subshell that runs the group.
-  const command = [
-    '(cd', shQuote(path.dirname(exe)), '&&',
-    `HOME=${shQuote(os.homedir())}`,
-    `SUDO_UID=${uid}`,
-    `SUDO_GID=${gid}`,
-    `GEOMIRAGE_PARENT_PID=${process.pid}`,
-    `GEOMIRAGE_VERSION=${shQuote(APP_VERSION)}`,
-    `${shQuote(exe)})`,
-    '> /dev/null 2>&1 &',
-  ].join(' ')
-  const script =
-    `do shell script ${appleScriptQuote(command)} ` +
-    `with prompt ${appleScriptQuote('GeoMirage 需要管理員權限才能連線 iOS 17 以上的裝置。')} ` +
-    'with administrator privileges'
+  const command = buildElevatedBackendCommand({
+    exe,
+    homeDir: os.homedir(),
+    uid,
+    gid,
+    parentPid: process.pid,
+    version: APP_VERSION,
+  })
+  const script = buildElevatedBackendScript(
+    command,
+    'GeoMirage 需要管理員權限才能連線 iOS 17 以上的裝置。',
+  )
   console.log('[electron] starting backend with administrator rights:', exe)
   elevatedBackendStarted = true
   const osa = spawn('/usr/bin/osascript', ['-e', script], { stdio: ['ignore', 'ignore', 'pipe'] })
