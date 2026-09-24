@@ -39,6 +39,18 @@ describe('formatCoordCardinal', () => {
   test('defaults to 5 decimal places', () => {
     expect(formatCoordCardinal(TAIPEI)).toBe('25.03300°N · 121.56540°E')
   })
+
+  test('uses S / W with absolute values in every quadrant', () => {
+    // NE, SE, NW, SW
+    expect(formatCoordCardinal(TAIPEI)).toBe('25.03300°N · 121.56540°E')
+    expect(formatCoordCardinal({ lat: -33.8688, lng: 151.2093 })).toBe('33.86880°S · 151.20930°E')
+    expect(formatCoordCardinal({ lat: 40.7128, lng: -74.006 })).toBe('40.71280°N · 74.00600°W')
+    expect(formatCoordCardinal({ lat: -34.6037, lng: -58.3816 })).toBe('34.60370°S · 58.38160°W')
+  })
+
+  test('a value that rounds to zero reads N / E', () => {
+    expect(formatCoordCardinal({ lat: -0.000001, lng: -0.000001 })).toBe('0.00000°N · 0.00000°E')
+  })
 })
 
 describe('formatCoordDegrees', () => {

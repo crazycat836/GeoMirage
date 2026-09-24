@@ -15,9 +15,16 @@ export function formatCoord(c: LatLng, precision = 6): string {
   return `${c.lat.toFixed(precision)}, ${c.lng.toFixed(precision)}`
 }
 
-/** "25.03300°N · 121.56540°E" — dock/waypoint cardinal style. */
+/** "25.03300°N · 121.56540°E" — dock/waypoint cardinal style. Negative
+ *  latitudes read °S and negative longitudes °W, as absolute values. */
 export function formatCoordCardinal(c: LatLng, precision = 5): string {
-  return `${c.lat.toFixed(precision)}°N · ${c.lng.toFixed(precision)}°E`
+  // Sign is taken from the rounded value so a coordinate that prints as
+  // 0.00000 never reads "°S" / "°W" (-0 >= 0 is true).
+  const hemi = (v: number, pos: string, neg: string) => {
+    const r = Number(v.toFixed(precision))
+    return `${Math.abs(r).toFixed(precision)}°${r >= 0 ? pos : neg}`
+  }
+  return `${hemi(c.lat, 'N', 'S')} · ${hemi(c.lng, 'E', 'W')}`
 }
 
 /** "25.033000°, 121.565400°" — degree-suffixed list-row style. */
