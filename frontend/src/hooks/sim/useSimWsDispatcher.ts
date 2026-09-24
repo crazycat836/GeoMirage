@@ -269,6 +269,26 @@ export function useSimWsDispatcher(
           }
           break
         }
+        case 'device_snapshot': {
+          // Sent on every WS (re)connect. A runtime still marked active
+          // for a device the backend no longer has (e.g. the backend
+          // restarted mid-run) will never get a closing state_change, so
+          // reset it here. Devices in the snapshot are left alone: the
+          // backend follows up with a state_change per engine.
+          const devices = asObject(wsMessage.data)?.devices
+          if (!Array.isArray(devices)) break
+          const live = new Set(devices.map((d) => asString(asObject(d)?.udid)))
+          s.setRuntimes((prev) => {
+            let next = prev
+            for (const [key, rt] of Object.entries(prev)) {
+              if (live.has(key) || rt.state === 'idle' || rt.state === 'disconnected') continue
+              if (next === prev) next = { ...prev }
+              next[key] = { ...rt, state: 'idle', routePath: [], eta: null, destination: null }
+            }
+            return next
+          })
+          break
+        }
         case 'device_disconnected': {
           // Device leaves the connected pool — chip switches to
           // "已斷線" via `device.connectedDevices`. Reset transient

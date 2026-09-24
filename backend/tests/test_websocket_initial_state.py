@@ -118,6 +118,46 @@ def test_empty_store_does_not_call_discover_devices():
     discover.assert_not_called()
 
 
+# ─── Engine state (authoritative run state on reconnect) ─────────────
+
+def test_state_change_sent_for_every_engine():
+    """Each engine's current state goes out tagged with its udid, so a
+    renderer that reconnects (e.g. after a backend restart) drops any
+    stale "running" view instead of waiting for a transition."""
+    from api.websocket import _send_initial_state
+    from context import ctx
+    from models.schemas import SimulationState
+
+    class _Engine:
+        def __init__(self, state):
+            self.state = state
+            self.current_position = None
+
+    ctx.app_state.simulation_engines = {
+        "udid-A": _Engine(SimulationState.IDLE),
+        "udid-B": _Engine(SimulationState.NAVIGATING),
+    }
+    ws = _make_fake_ws()
+    asyncio.run(_send_initial_state(ws))
+
+    frames = _frames(ws)
+    changes = _by_type(frames, "state_change")
+    assert sorted((f["data"]["udid"], f["data"]["state"]) for f in changes) == [
+        ("udid-A", "idle"), ("udid-B", "navigating"),
+    ]
+    # After the device snapshot, so the renderer already knows the devices.
+    types = [f["type"] for f in frames]
+    assert types.index("device_snapshot") < types.index("state_change")
+
+
+def test_no_engines_sends_no_state_change():
+    from api.websocket import _send_initial_state
+
+    ws = _make_fake_ws()
+    asyncio.run(_send_initial_state(ws))
+    assert _by_type(_frames(ws), "state_change") == []
+
+
 # ─── Populated-store path ────────────────────────────────────────────
 
 def test_connected_device_appears_in_snapshot():

@@ -575,6 +575,51 @@ describe('waypoint_progress / lap_complete defaults', () => {
   })
 })
 
+describe('device_snapshot', () => {
+  it('resets an active runtime whose device is missing from the snapshot', () => {
+    // Backend restarted mid-run: the new process knows no devices, so the
+    // snapshot is the only signal that the old run is gone.
+    const h = createHarness({
+      runtimes: {
+        [UDID_A]: {
+          ...emptyRuntime(UDID_A),
+          state: 'navigating',
+          routePath: [{ lat: 1, lng: 2 }],
+          destination: { lat: 9, lng: 9 },
+          eta: 60,
+        },
+        [UDID_B]: { ...emptyRuntime(UDID_B), state: 'looping', routePath: [{ lat: 3, lng: 4 }] },
+      },
+    })
+    h.send('device_snapshot', { devices: [{ udid: UDID_B }] })
+
+    expect(h.runtimes[UDID_A].state).toBe('idle')
+    expect(h.runtimes[UDID_A].routePath).toEqual([])
+    expect(h.runtimes[UDID_A].destination).toBeNull()
+    expect(h.runtimes[UDID_A].eta).toBeNull()
+    // Devices still connected keep their state; the backend follows the
+    // snapshot with an authoritative state_change for each engine.
+    expect(h.runtimes[UDID_B].state).toBe('looping')
+    expect(h.runtimes[UDID_B].routePath).toEqual([{ lat: 3, lng: 4 }])
+  })
+
+  it('resets an active local slot when the snapshot is empty', () => {
+    const h = createHarness({
+      runtimes: { [LOCAL_RUNTIME_KEY]: { ...emptyRuntime(LOCAL_RUNTIME_KEY), state: 'paused' } },
+    })
+    h.send('device_snapshot', { devices: [] })
+    expect(h.runtimes[LOCAL_RUNTIME_KEY].state).toBe('idle')
+  })
+
+  it('leaves the map untouched when nothing is stale', () => {
+    const seeded: RuntimesMap = { [UDID_A]: { ...emptyRuntime(UDID_A), state: 'navigating' } }
+    const h = createHarness({ runtimes: seeded })
+    const before = h.runtimes
+    h.send('device_snapshot', { devices: [{ udid: UDID_A }] })
+    expect(h.runtimes).toBe(before)
+  })
+})
+
 describe('pause_countdown / ddi / tunnel_lost / device_disconnected', () => {
   it('pause_countdown sets pauseEndAt = now + duration_seconds*1000; non-positive is ignored', () => {
     vi.spyOn(Date, 'now').mockReturnValue(1_000_000)

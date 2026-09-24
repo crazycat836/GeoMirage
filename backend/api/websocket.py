@@ -63,6 +63,8 @@ async def _send_initial_state(ws: WebSocket) -> None:
     client sees the "reconnecting…" hint that earlier clients received as
     a transition event.
 
+    Then one ``state_change`` per engine carries its current run state.
+
     Also kicks off a non-blocking two-layer health probe per connected
     device via :func:`services.device_health.schedule_probes` (debounced
     per UDID). The probe
@@ -115,6 +117,12 @@ async def _send_initial_state(ws: WebSocket) -> None:
     # event, not the reason text.
     for udid in degraded_udids:
         await _send_event(ws, "tunnel_degraded", {"udid": udid, "reason": "snapshot"})
+
+    # Each engine's current run state. The renderer only learns run state
+    # from transitions, so without this a client that reconnects after a
+    # backend restart keeps showing the dead run as "running".
+    for udid, engine in list(app_state.simulation_engines.items()):
+        await _send_event(ws, "state_change", {"state": engine.state.value, "udid": udid})
 
     # Kick off a debounced health probe per snapshotted udid. The
     # service skips entirely when no DeviceManager is wired up (test
