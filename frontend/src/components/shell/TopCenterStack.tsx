@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useSimActions, useSimState } from '../../contexts/SimContext'
-import { useToastContext } from '../../contexts/ToastContext'
+import { useToastMsg } from '../../contexts/ToastContext'
 import { useT } from '../../i18n'
 import { isEtaBarLive } from '../EtaBar'
 import ConnectionStatusBanner from './ConnectionStatusBanner'
@@ -34,7 +34,7 @@ interface TopCenterStackProps {
 export default function TopCenterStack({ onOpenDevices }: TopCenterStackProps) {
   const { error, status, runtimes, pauseRemaining } = useSimState()
   const { clearError } = useSimActions()
-  const { toastMsg } = useToastContext()
+  const toastMsg = useToastMsg()
   const t = useT()
 
   const etaLive = isEtaBarLive(status?.state ?? 'idle', runtimes)

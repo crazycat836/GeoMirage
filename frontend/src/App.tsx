@@ -142,6 +142,7 @@ function resolveSpeedKmh(
 function AppShell() {
   const t = useT()
   const toast = useToastContext()
+  const { showToast } = toast
   const device = useDeviceContext()
   // Actions are referentially stable for the app's lifetime; `sim` is
   // the ticking state slice (AppShell renders MapView / EtaBar, so it
@@ -327,13 +328,13 @@ function AppShell() {
     const graceTimer = setTimeout(() => setDdiTakingLong(true), DDI_TAKING_LONG_MS)
     const safetyTimer = setTimeout(() => {
       clearDdiMounting()
-      toast.showToast(t('toast.ddi_timeout'), 6000)
+      showToast(t('toast.ddi_timeout'), 6000)
     }, DDI_SAFETY_TIMEOUT_MS)
     return () => {
       clearTimeout(graceTimer)
       clearTimeout(safetyTimer)
     }
-  }, [sim.ddiMounting, clearDdiMounting, toast, t])
+  }, [sim.ddiMounting, clearDdiMounting, showToast, t])
   useEffect(() => {
     if (sim.ddiMounting && health.ws === 'offline') clearDdiMounting()
   }, [sim.ddiMounting, health.ws, clearDdiMounting])

@@ -89,7 +89,7 @@ export function BookmarkProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setImportingBookmarks(false)
     }
-  }, [bm, showToast, t])
+  }, [bm.refresh, showToast, t])
 
   // Stable handler; latest bm.refresh is picked up via the hook's internal
   // ref. See useSerializedReorder for the in-flight/queue rationale.
@@ -141,7 +141,7 @@ export function BookmarkProvider({ children }: { children: React.ReactNode }) {
       if (failed > 0) showToast(t('toast.bookmarks_bulk_partial', { n: failed }))
       return { created, failed }
     },
-    [bm, showToast, t],
+    [bm.places, bm.refresh, showToast, t],
   )
 
   // Memoize so consumers don't re-render on every provider re-render.
