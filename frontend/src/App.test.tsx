@@ -97,7 +97,6 @@ vi.mock('./contexts/SimContext', () => {
     SimProvider,
     useSimState: () => useContext(Ctx),
     useSimActions: () => actions,
-    SPEED_MAP: { walking: 5, running: 10, driving: 40 },
   }
 })
 

@@ -7,7 +7,8 @@ import { useSimDerived } from '../../contexts/SimDerivedContext'
 import { useSimSettings } from '../../contexts/SimSettingsContext'
 import { SimMode, isRouteSubMode } from '../../hooks/useSimulation'
 import { useT } from '../../i18n'
-import { RADIUS_PRESETS, SPEED_MAP, type SpeedPresetMode } from '../../lib/constants'
+import { RADIUS_PRESETS } from '../../lib/constants'
+import { resolveEffectiveKmh } from '../../lib/sim-derive'
 import { STORAGE_KEYS } from '../../lib/storage-keys'
 import { readLS, writeLS } from '../../lib/local-storage'
 import GlassIconButton from '../ui/GlassIconButton'
@@ -71,10 +72,8 @@ export default function BottomDock() {
     })
   }, [])
 
-  // Planning speed for the Flower estimate: custom > range midpoint > preset.
-  const planSpeedKmh = customSpeedKmh
-    ?? (speedMinKmh != null && speedMaxKmh != null ? (speedMinKmh + speedMaxKmh) / 2 : null)
-    ?? SPEED_MAP[moveMode as SpeedPresetMode]
+  // Planning speed for the Flower estimate — same rule the backend moves at.
+  const planSpeedKmh = resolveEffectiveKmh({ moveMode, customSpeedKmh, speedMinKmh, speedMaxKmh })
   const ctx = useMemo(
     () => buildDockContext(mode, waypoints, currentPos, destPos, t, {
       settings: flowerSettings,

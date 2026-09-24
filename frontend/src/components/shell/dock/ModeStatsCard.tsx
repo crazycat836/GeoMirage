@@ -9,8 +9,9 @@ import {
 import { SimMode } from '../../../hooks/useSimulation'
 import { useT } from '../../../i18n'
 import { haversineM, polylineDistanceM } from '../../../lib/geo'
+import { resolveEffectiveKmh } from '../../../lib/sim-derive'
 import { KM_THRESHOLD_M, formatCooldownS, formatDistanceM, formatDurationS } from '../../../lib/format'
-import { RADIUS_PRESETS, SPEED_MAP, cooldownForDistM, type SpeedPresetMode } from '../../../lib/constants'
+import { RADIUS_PRESETS, cooldownForDistM } from '../../../lib/constants'
 import {
   FLOWER_LIMITS,
   stepFlowerRounds,
@@ -193,9 +194,7 @@ export function CardShell({ children }: { children: React.ReactNode }) {
 // ── Formatting helpers ────────────────────────────────────────────────
 
 function useActiveSpeedKmh(): number {
-  const { customSpeedKmh, moveMode } = useSimState()
-  if (customSpeedKmh != null) return customSpeedKmh
-  return SPEED_MAP[moveMode as SpeedPresetMode] ?? 10.8
+  return resolveEffectiveKmh(useSimState())
 }
 
 function formatEta(distM: number, speedKmh: number, laps: number | null, t: Translate): string {

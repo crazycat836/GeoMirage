@@ -8,6 +8,7 @@ import { STORAGE_KEYS } from './lib/storage-keys'
 import { readLS, writeLS } from './lib/local-storage'
 import { haversineM, polylineDistanceM } from './lib/geo'
 import { estimateFlowerPlan, flowerPlanDistanceM } from './lib/flower'
+import { resolveEffectiveKmh } from './lib/sim-derive'
 import { useUsageCapture } from './services/usage'
 
 // Context providers
@@ -15,7 +16,7 @@ import { ToastProvider, useToastContext } from './contexts/ToastContext'
 import { WebSocketProvider } from './contexts/WebSocketContext'
 import { DeviceProvider, useDeviceContext } from './contexts/DeviceContext'
 import { ConnectionHealthProvider } from './contexts/ConnectionHealthContext'
-import { SimProvider, useSimActions, useSimState, SPEED_MAP } from './contexts/SimContext'
+import { SimProvider, useSimActions, useSimState } from './contexts/SimContext'
 import { SimSettingsProvider, useSimSettings } from './contexts/SimSettingsContext'
 import { SimDerivedProvider, useSimDerived, useSimOverview } from './contexts/SimDerivedContext'
 import { BookmarkProvider, useBookmarkContext } from './contexts/BookmarkContext'
@@ -125,19 +126,6 @@ function App() {
   )
 }
 
-// Resolve the effective km/h used for preview ETA. Matches the precedence
-// the backend applies: custom speed > random range midpoint > mode preset.
-function resolveSpeedKmh(
-  customKmh: number | null,
-  minKmh: number | null,
-  maxKmh: number | null,
-  moveMode: string,
-): number {
-  if (customKmh != null) return customKmh
-  if (minKmh != null && maxKmh != null) return (minKmh + maxKmh) / 2
-  return SPEED_MAP[moveMode as keyof typeof SPEED_MAP] ?? 5
-}
-
 // Map layer — everything that has to follow the position stream (map
 // props, planned-route ETA preview, the ETA bar, the add-bookmark dialog's
 // "use current position"). Split out of AppShell so a position tick only
@@ -197,7 +185,7 @@ function SimMapLayer({
 
   const plannedEtaSeconds = useMemo(() => {
     if (plannedDistanceM <= 0) return 0
-    const kmh = resolveSpeedKmh(sim.customSpeedKmh, sim.speedMinKmh, sim.speedMaxKmh, sim.moveMode)
+    const kmh = resolveEffectiveKmh(sim)
     const ms = kmh * 1000 / 3600
     return ms > 0 ? plannedDistanceM / ms : 0
   }, [plannedDistanceM, sim.customSpeedKmh, sim.speedMinKmh, sim.speedMaxKmh, sim.moveMode])

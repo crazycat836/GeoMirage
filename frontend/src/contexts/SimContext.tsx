@@ -9,7 +9,6 @@ import {
   RANDOM_GEN_RADIUS_MAX_M,
   RANDOM_GEN_RADIUS_MIN_M,
   RESTORE_MIN_DISPLAY_MS,
-  SPEED_MAP,
   MIN_WAYPOINTS_FOR_OPTIMIZE,
 } from '../lib/constants'
 import { devWarn } from '../lib/dev-log'
@@ -35,12 +34,6 @@ const SIM_ERROR_KEYS: Record<SimErrorCode, StringKey> = {
 // Re-export for consumers
 export { SimMode, MoveMode }
 export type { SpeedSelection }
-
-
-// Re-export `SPEED_MAP` so existing consumers (`App.tsx`) keep importing
-// it through `contexts/SimContext`. The canonical definition lives in
-// `lib/constants.ts` next to `SPEED_PRESETS` so the two cannot drift.
-export { SPEED_MAP }
 
 // `useSimulation`'s return shape — the source the two context slices
 // below are carved from. Using `Pick` keeps every field/function type

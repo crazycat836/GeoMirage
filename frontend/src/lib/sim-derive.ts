@@ -41,7 +41,7 @@ function formatDisplaySpeed(
     return `${Math.min(lo, hi)}~${Math.max(lo, hi)}`
   }
   if (kmh != null) return kmh
-  return SPEED_MAP[moveMode] ?? 5
+  return SPEED_MAP[moveMode] ?? SPEED_MAP.walking
 }
 
 /** Inputs `pickDisplaySpeed` consumes from a `useSimulation()` snapshot. */
@@ -67,4 +67,31 @@ export function pickDisplaySpeed(s: DisplaySpeedInputs): number | string {
         s.moveMode,
       )
     : formatDisplaySpeed(s.customSpeedKmh, s.speedMinKmh, s.speedMaxKmh, s.moveMode)
+}
+
+/** The user-staged speed preferences a run is started with. */
+export interface SpeedPrefs {
+  moveMode: string
+  customSpeedKmh: number | null
+  speedMinKmh: number | null
+  speedMaxKmh: number | null
+}
+
+/**
+ * The km/h a run started with these preferences will move at, for ETA and
+ * distance estimates. Mirrors the backend's `resolve_speed_profile`
+ * (backend/config.py): range > fixed custom > mode preset. A range is
+ * sampled uniformly per leg there, so the estimate uses its midpoint, with
+ * the same 0.1 km/h floor on the low end; a custom speed of 0 falls
+ * through to the preset like the backend's truthiness check.
+ */
+export function resolveEffectiveKmh(p: SpeedPrefs): number {
+  if (p.speedMinKmh != null && p.speedMaxKmh != null) {
+    let lo = Math.min(p.speedMinKmh, p.speedMaxKmh)
+    const hi = Math.max(p.speedMinKmh, p.speedMaxKmh)
+    if (lo <= 0) lo = 0.1
+    return (lo + hi) / 2
+  }
+  if (p.customSpeedKmh) return p.customSpeedKmh
+  return SPEED_MAP[p.moveMode as MoveMode] ?? SPEED_MAP.walking
 }
