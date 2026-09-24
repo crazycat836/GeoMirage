@@ -5,6 +5,7 @@ import { ICON_SIZE } from '../../lib/icons'
 import { isDefaultPlace } from '../../lib/bookmarks'
 import { useT } from '../../i18n'
 import Modal from '../Modal'
+import TagChip from '../ui/TagChip'
 
 export interface BookmarkEditValues {
   name: string
@@ -294,30 +295,14 @@ export default function BookmarkEditDialog(props: Props) {
               {tags.length === 0 && (
                 <span className="text-[11px] text-[var(--color-text-3)] italic">—</span>
               )}
-              {tags.map((tag) => {
-                const selected = tagIds.includes(tag.id)
-                return (
-                  <button
-                    key={tag.id}
-                    type="button"
-                    onClick={() => toggleTag(tag.id)}
-                    className="tag-chip"
-                    data-selected={selected ? 'true' : 'false'}
-                    style={{
-                      fontSize: 11,
-                      padding: '3px 10px',
-                      borderRadius: 999,
-                      border: '1px solid var(--color-border)',
-                      background: selected ? (tag.color || 'var(--color-accent)') : 'transparent',
-                      color: selected ? '#fff' : 'var(--color-text-2)',
-                      cursor: 'pointer',
-                      transition: 'all var(--duration-fast, 150ms) ease',
-                    }}
-                  >
-                    {tag.name}
-                  </button>
-                )
-              })}
+              {tags.map((tag) => (
+                <TagChip
+                  key={tag.id}
+                  tag={tag}
+                  selected={tagIds.includes(tag.id)}
+                  onToggle={() => toggleTag(tag.id)}
+                />
+              ))}
             </div>
           </div>
 

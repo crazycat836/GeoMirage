@@ -8,7 +8,7 @@ import type { BookmarkTag } from '../../hooks/useBookmarks'
 import SearchField from '../ui/SearchField'
 import ChipFilterBar, { type Chip } from '../ui/ChipFilterBar'
 import KebabMenu, { type KebabMenuItem } from '../ui/KebabMenu'
-import { getTagColor } from '../../lib/bookmarks'
+import TagChip from '../ui/TagChip'
 
 export type SortMode = 'recent' | 'by_place'
 
@@ -151,31 +151,14 @@ function TagFilterRow({ tags, activeTagIds, onToggleTag, onClearTags }: TagFilte
       style={{ paddingBottom: 2 }}
     >
       <TagIconLucide width={12} height={12} className="text-[var(--color-text-3)] shrink-0" />
-      {tags.map((tag) => {
-        const selected = activeTagIds.has(tag.id)
-        return (
-          <button
-            key={tag.id}
-            type="button"
-            onClick={() => onToggleTag(tag.id)}
-            aria-pressed={selected}
-            style={{
-              fontSize: 10.5,
-              padding: '2px 8px',
-              borderRadius: 999,
-              border: '1px solid var(--color-border)',
-              background: selected ? getTagColor(tag) : 'transparent',
-              color: selected ? '#fff' : 'var(--color-text-2)',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
-              transition: 'all var(--duration-fast, 150ms) ease',
-            }}
-          >
-            {tag.name}
-          </button>
-        )
-      })}
+      {tags.map((tag) => (
+        <TagChip
+          key={tag.id}
+          tag={tag}
+          selected={activeTagIds.has(tag.id)}
+          onToggle={() => onToggleTag(tag.id)}
+        />
+      ))}
       {activeTagIds.size > 0 && (
         <button
           type="button"
