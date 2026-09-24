@@ -280,6 +280,12 @@ async def move_along_route(
 
         reinterpolate_from_point: int | None = None
 
+        # Ticks are scheduled against this plan's start time, so the time
+        # spent pushing and emitting comes out of each wait instead of
+        # adding to it.
+        clock = asyncio.get_running_loop()
+        plan_start = clock.time()
+
         for idx, point in enumerate(timed_points):
             # ── Check stop ──
             if engine._stop_event.is_set():
@@ -289,7 +295,11 @@ async def move_along_route(
             # ── Check pause ──
             if not engine._pause_event.is_set():
                 logger.debug("Paused at point %d/%d", idx, len(timed_points))
+                paused_at = clock.time()
                 await engine._pause_event.wait()
+                # Shift the schedule by the pause so resuming doesn't
+                # fire the skipped ticks back to back.
+                plan_start += clock.time() - paused_at
                 if engine._stop_event.is_set():
                     break
 
@@ -341,7 +351,13 @@ async def move_along_route(
             # Wait for the next tick (unless this is the last point)
             if idx < len(timed_points) - 1:
                 next_point = timed_points[idx + 1]
-                wait_time = next_point["timestamp_offset"] - point["timestamp_offset"]
+                wait_time = plan_start + next_point["timestamp_offset"] - clock.time()
+                if wait_time < -update_interval:
+                    # More than a tick behind (e.g. a push stalled on a
+                    # reconnect): drop the debt rather than bursting
+                    # several points out at once to catch up.
+                    plan_start -= wait_time
+                    wait_time = 0.0
                 if wait_time > 0:
                     try:
                         await asyncio.wait_for(

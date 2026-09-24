@@ -379,3 +379,59 @@ def test_stop_suppresses_waypoint_force_advance():
     # Only the initial announcement — no pass, no force-advance.
     assert len(_waypoint_events(events)) == 1
     assert engine._user_waypoint_next == 0
+
+
+# ── (e) tick schedule absorbs push latency ──────────────────────────────
+
+
+class SlowLocationService(FakeLocationService):
+    """Each push takes ``delay_s`` of wall time, like a real device."""
+
+    def __init__(self, delay_s: float) -> None:
+        super().__init__()
+        self.delay_s = delay_s
+        self.push_times: list[float] = []
+
+    async def set(self, lat: float, lng: float) -> None:
+        await asyncio.sleep(self.delay_s)
+        self.push_times.append(time.monotonic())
+        await super().set(lat, lng)
+
+
+def test_push_latency_does_not_slow_the_route_down():
+    async def scenario():
+        slow = SlowLocationService(delay_s=0.03)
+        engine = SimulationEngine(location_service=slow, event_callback=None)
+        # 10 m/s over 10 m, one tick every 0.1 s: nominal 1.0 s.
+        coords = _lat_route([0.0, 10.0])
+        points = RouteInterpolator.interpolate(coords, 10.0, 0.1)
+        nominal = points[-1]["timestamp_offset"]
+        await move_along_route(engine, coords, _profile(10.0, update_interval=0.1))
+        # The first push lands at offset 0, so measure from its end.
+        return nominal, slow.push_times[-1] - slow.push_times[0]
+
+    nominal, elapsed = asyncio.run(scenario())
+    assert abs(elapsed - nominal) / nominal < 0.05
+
+
+def test_resume_after_pause_does_not_burst_to_catch_up():
+    async def scenario():
+        slow = SlowLocationService(delay_s=0.01)
+        engine = SimulationEngine(location_service=slow, event_callback=None)
+        coords = _lat_route([0.0, 10.0])
+        task = asyncio.create_task(
+            move_along_route(engine, coords, _profile(10.0, update_interval=0.1))
+        )
+        await _wait_until(lambda: len(slow.push_times) >= 3)
+        engine._pause_event.clear()
+        await asyncio.sleep(0.4)
+        resumed_at = time.monotonic()
+        engine._pause_event.set()
+        await asyncio.wait_for(task, timeout=_WAIT_TIMEOUT_S)
+        return [t for t in slow.push_times if t >= resumed_at]
+
+    after = asyncio.run(scenario())
+    gaps = [b - a for a, b in zip(after, after[1:])]
+    assert gaps
+    # Every tick after the resume keeps (roughly) the 0.1 s cadence.
+    assert min(gaps) > 0.07
