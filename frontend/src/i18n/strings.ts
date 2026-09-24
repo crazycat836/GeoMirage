@@ -580,6 +580,10 @@ export const STRINGS = {
 
   // ── ETA ─────────────────────────────────────────
   'eta.progress_aria': { zh: '進度', en: 'Progress' },
+  'eta.sr_running': { zh: '模擬進行中', en: 'Simulation running' },
+  'eta.sr_paused': { zh: '模擬已暫停', en: 'Simulation paused' },
+  'eta.sr_arrived': { zh: '已抵達終點', en: 'Arrived at destination' },
+  'eta.sr_stopped': { zh: '模擬已停止', en: 'Simulation stopped' },
 
   // ── Bookmarks (new) ────────────────────────────
   'bm.uncategorized': { zh: '未分類', en: 'Uncategorized' },

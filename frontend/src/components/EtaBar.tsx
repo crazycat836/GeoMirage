@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { Pause, Play } from 'lucide-react'
 import { useT } from '../i18n'
 import { formatDistanceM } from '../lib/format'
@@ -65,13 +66,40 @@ function EtaBar({
     : []
   const isGroup = activeRuntimes.length >= 2
 
-  // Design pins the bar on-screen only while something is running;
-  // before start the dock panel already carries planned distance/ETA.
-  if (!isEtaBarLive(state, runtimes)) return null
+  const live = isEtaBarLive(state, runtimes)
 
   const aggProgress = isGroup
     ? activeRuntimes.reduce((s, r) => s + (r.progress || 0), 0) / activeRuntimes.length
     : progress
+
+  // Screen-reader announcements. The stats below tick every position
+  // update (~1 s), so they must not sit in a live region; instead a
+  // separate, always-mounted region speaks only on run-state changes:
+  // start, pause, and arrival (or stop).
+  const phase: 'idle' | 'running' | 'paused' = !live ? 'idle' : isPaused ? 'paused' : 'running'
+  const prevPhaseRef = useRef(phase)
+  const [announcement, setAnnouncement] = useState('')
+  useEffect(() => {
+    const prev = prevPhaseRef.current
+    prevPhaseRef.current = phase
+    if (prev === phase) return
+    if (phase === 'running') setAnnouncement(t('eta.sr_running'))
+    else if (phase === 'paused') setAnnouncement(t('eta.sr_paused'))
+    else setAnnouncement(aggProgress >= 1 ? t('eta.sr_arrived') : t('eta.sr_stopped'))
+    // Only phase transitions announce; progress/t are read at that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase])
+
+  const liveRegion = (
+    <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+      {announcement}
+    </div>
+  )
+
+  // Design pins the bar on-screen only while something is running;
+  // before start the dock panel already carries planned distance/ETA.
+  if (!live) return liveRegion
+
   const aggEta = isGroup
     ? Math.max(...activeRuntimes.map((r) => r.eta || 0))
     : eta
@@ -82,10 +110,10 @@ function EtaBar({
   const percent = Math.max(0, Math.min(aggProgress * 100, 100))
 
   return (
+    <>
+    {liveRegion}
     <div
       data-fc="map.eta-bar"
-      role="status"
-      aria-live="polite"
       className={[
         // No Tailwind `-translate-x-1/2` here: Tailwind v4 emits it as
         // the CSS `translate:` longhand, which *stacks* with the
@@ -115,6 +143,10 @@ function EtaBar({
       {/* Progress bar (160×4) with gradient fill + glow */}
       <div
         className="w-40 h-1 rounded-[2px] bg-white/[0.08] overflow-hidden relative shrink-0"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(percent)}
         aria-label={t('eta.progress_aria')}
       >
         <div
@@ -153,6 +185,7 @@ function EtaBar({
           : <Pause className="w-3 h-3" fill="currentColor" />}
       </button>
     </div>
+    </>
   )
 }
 
