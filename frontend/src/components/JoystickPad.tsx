@@ -384,14 +384,14 @@ function JoystickPad({
               height: handleRadius * 2,
               borderRadius: '50%',
               background: dragging
-                ? 'radial-gradient(circle, #6b8afd 0%, #4a6cf7 100%)'
+                ? 'radial-gradient(circle, var(--color-accent-hover) 0%, var(--color-accent) 100%)'
                 : 'radial-gradient(circle, #888 0%, #555 100%)',
               border: '2px solid rgba(255,255,255,0.3)',
               position: 'absolute',
               left: padRadius - handleRadius + visualPos.x,
               top: padRadius - handleRadius + visualPos.y,
               pointerEvents: 'none',
-              boxShadow: dragging ? '0 0 12px rgba(74,108,247,0.5)' : '0 2px 6px rgba(0,0,0,0.3)',
+              boxShadow: dragging ? '0 0 12px var(--color-accent-glow)' : '0 2px 6px rgba(0,0,0,0.3)',
             }}
           />
         </div>

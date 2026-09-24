@@ -43,4 +43,10 @@ describe('style lint', () => {
     const re = /[a-z0-9]-\[[^\]\s"'`]*\s[^\]"'`]*\]/
     expect(scan(TSX, re)).toEqual([])
   })
+
+  it('no leftovers of the old blue accent (use --color-accent-* tokens or ACCENT_HEX)', () => {
+    const re = /108,\s*140|#6c8cff|#a8bdff|#8aa3ff|#6b8afd|#4a6cf7|74,\s*108,\s*247/i
+    const css = walk(SRC, ['.css'])
+    expect(scan([...TSX, ...css], re)).toEqual([])
+  })
 })

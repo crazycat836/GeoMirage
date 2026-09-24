@@ -185,9 +185,9 @@ function StopRow({ pt, label, isStart, onRemove, onBookmark, dragHandle, setNode
           color: '#6ee5b5',
           border: '1px solid rgba(52,211,153,0.25)',
         } : {
-          background: 'rgba(108,140,255,0.14)',
-          color: '#a8bdff',
-          border: '1px solid rgba(108,140,255,0.25)',
+          background: 'var(--color-accent-dim)',
+          color: 'var(--color-accent-strong)',
+          border: '1px solid var(--color-accent-glow)',
         }}
       >
         {isStart

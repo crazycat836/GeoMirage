@@ -176,7 +176,7 @@ export function CardShell({ children }: { children: React.ReactNode }) {
     <div
       className="rounded-[14px] border border-[var(--color-border)] overflow-hidden relative"
       style={{
-        background: `radial-gradient(120% 100% at 0% 0%, rgba(108,140,255,0.10) 0%, transparent 55%),
+        background: `radial-gradient(120% 100% at 0% 0%, var(--color-accent-dim) 0%, transparent 55%),
                      linear-gradient(180deg, rgba(255,255,255,0.045) 0%, rgba(255,255,255,0.02) 100%)`,
         boxShadow:
           'inset 0 1px 0 rgba(255,255,255,0.06), 0 4px 16px rgba(0,0,0,0.25)',

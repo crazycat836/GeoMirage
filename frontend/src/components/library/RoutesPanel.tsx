@@ -24,7 +24,7 @@ import { useDragReorder } from '../../hooks/useDragReorder'
 import { useReorderMode } from '../../hooks/useReorderMode'
 import { useSelectionSet } from '../../hooks/useSelectionSet'
 import type { SavedRoute } from '../../services/api'
-import { LIBRARY_CHIPS_VISIBLE_CAP } from '../../lib/constants'
+import { ACCENT_HEX, LIBRARY_CHIPS_VISIBLE_CAP } from '../../lib/constants'
 
 interface RoutesPanelProps {
   onRouteLoaded: () => void
@@ -33,7 +33,8 @@ interface RoutesPanelProps {
 type SortMode = 'default' | 'name' | 'created' | 'updated'
 
 const ALL_ID = '__all__' as const
-const DEFAULT_CATEGORY_COLOR = '#6c8cff'
+// Hex (not a CSS var) because it seeds an <input type="color"> value.
+const DEFAULT_CATEGORY_COLOR = ACCENT_HEX
 
 const getRouteId = (r: SavedRoute) => r.id
 
