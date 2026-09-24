@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useSimActions, useSimState } from '../../../contexts/SimContext'
 import { useSimDerived } from '../../../contexts/SimDerivedContext'
 import {
@@ -18,6 +18,7 @@ import {
   type FlowerSettings,
   type FlowerTransfer,
 } from '../../../lib/flower'
+import Toggle from '../../ui/Toggle'
 
 // ── Shared visual primitives ──────────────────────────────────────────
 
@@ -130,34 +131,6 @@ function ControlCell({ label, divider = false, compact = false, children }: Cont
       </span>
       {children}
     </div>
-  )
-}
-
-// ── Toggle switch ────────────────────────────────────────────────────
-
-function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange?: (v: boolean) => void }) {
-  const [localOn, setLocalOn] = useState(checked)
-  const on = onChange ? checked : localOn
-  const toggle = () => {
-    if (onChange) { onChange(!checked) }
-    else { setLocalOn((v) => !v) }
-  }
-  return (
-    <button
-      type="button"
-      aria-pressed={on}
-      onClick={toggle}
-      className="w-11 h-6 rounded-xl relative cursor-pointer transition-colors"
-      style={{ background: on ? 'var(--color-accent)' : 'rgba(255,255,255,0.12)' }}
-    >
-      <div
-        className="absolute top-[2px] w-5 h-5 rounded-full bg-white shadow-sm transition-transform"
-        style={{
-          left: '2px',
-          transform: on ? 'translateX(20px)' : 'translateX(0)',
-        }}
-      />
-    </button>
   )
 }
 
@@ -289,7 +262,7 @@ function TeleportCard() {
         <RowDivider />
       </div>
       <ControlCell label={t('dock.auto_jitter')}>
-        <ToggleSwitch checked={autoJitter} onChange={setAutoJitter} />
+        <Toggle checked={autoJitter} onChange={setAutoJitter} ariaLabel={t('dock.auto_jitter')} />
       </ControlCell>
     </CardShell>
   )
@@ -356,10 +329,10 @@ function LoopCard() {
       </div>
       <div className="grid grid-cols-2">
         <ControlCell label={t('dock.loop')}>
-          <ToggleSwitch checked={loopEnabled} onChange={handleToggle} />
+          <Toggle checked={loopEnabled} onChange={handleToggle} ariaLabel={t('dock.loop')} />
         </ControlCell>
         <ControlCell label={t('dock.count')} divider>
-          <Stepper value={displayCount} onDec={handleDec} onInc={handleInc} />
+          <Stepper value={displayCount} onDec={handleDec} onInc={handleInc} label={t('dock.count')} />
         </ControlCell>
       </div>
     </CardShell>
@@ -396,9 +369,10 @@ function MultiStopCard() {
             pauseMultiStop setting (was a dead toggle with internal-only
             local state). */}
         <ControlCell label={t('dock.pause_toggle')}>
-          <ToggleSwitch
+          <Toggle
             checked={pauseMultiStop.enabled}
             onChange={(on) => setPauseMultiStop({ ...pauseMultiStop, enabled: on })}
+            ariaLabel={t('dock.pause_toggle')}
           />
         </ControlCell>
         {/* Stops is a read-out, not a control — the count is driven by the
@@ -617,6 +591,7 @@ function JoystickCard() {
           value={String(joystickSensitivity)}
           onDec={() => setJoystickSensitivity(Math.max(JOYSTICK_SENSITIVITY_MIN, joystickSensitivity - 1))}
           onInc={() => setJoystickSensitivity(Math.min(JOYSTICK_SENSITIVITY_MAX, joystickSensitivity + 1))}
+          label={t('dock.sensitivity')}
         />
       </ControlCell>
     </CardShell>

@@ -307,9 +307,9 @@ function RandomConfigPanel({ onCancel, onGenerate }: { onCancel: () => void; onG
               {t('dock.waypoints')}
             </span>
             <div className="inline-flex items-center gap-0.5 h-6 px-0.5 rounded-xl" style={{ background: 'rgba(255,255,255,0.12)' }}>
-              <button type="button" onClick={() => setWpGenCount(Math.max(2, wpGenCount - 1))} className="w-7 h-7 rounded-lg grid place-items-center text-[14px] text-[var(--color-text-2)] bg-white/[0.06] hover:bg-[rgba(167,139,250,0.18)] transition-colors cursor-pointer">−</button>
+              <button type="button" onClick={() => setWpGenCount(Math.max(2, wpGenCount - 1))} aria-label={`${t('dock.waypoints')} −`} className="w-7 h-7 rounded-lg grid place-items-center text-[14px] text-[var(--color-text-2)] bg-white/[0.06] hover:bg-[rgba(167,139,250,0.18)] transition-colors cursor-pointer">−</button>
               <span className="font-mono text-[13px] font-semibold text-[var(--color-text-1)] min-w-[28px] text-center tabular-nums">{wpGenCount}</span>
-              <button type="button" onClick={() => setWpGenCount(Math.min(20, wpGenCount + 1))} className="w-7 h-7 rounded-lg grid place-items-center text-[14px] text-[var(--color-text-2)] bg-white/[0.06] hover:bg-[rgba(167,139,250,0.18)] transition-colors cursor-pointer">+</button>
+              <button type="button" onClick={() => setWpGenCount(Math.min(20, wpGenCount + 1))} aria-label={`${t('dock.waypoints')} +`} className="w-7 h-7 rounded-lg grid place-items-center text-[14px] text-[var(--color-text-2)] bg-white/[0.06] hover:bg-[rgba(167,139,250,0.18)] transition-colors cursor-pointer">+</button>
             </div>
           </div>
         </div>
