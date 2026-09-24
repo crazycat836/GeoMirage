@@ -67,26 +67,63 @@ def die(msg: str) -> "None":
 
 # ── Python launcher resolution ───────────────────────────────────────
 
+REQUIRED_PYTHON = (3, 13)
+
+
+def _python_version(argv: list[str]) -> tuple[int, int] | None:
+    """``(major, minor)`` of the interpreter behind *argv*, or None."""
+    try:
+        out = subprocess.run(
+            [*argv, "-c", "import sys; print('%d.%d' % sys.version_info[:2])"],
+            capture_output=True, text=True, timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    try:
+        major, minor = out.stdout.strip().split(".")
+        return int(major), int(minor)
+    except ValueError:
+        return None
+
+
+_resolved_python: list[str] | None = None
+
+
 def resolve_python() -> list[str]:
     """Return the argv prefix used to invoke Python 3.13 for PyInstaller.
 
-    On Windows prefers the ``py -3.13`` launcher (ships with the official
-    installer) so we don't have to guess at absolute paths; falls back to
-    ``python`` on PATH. On macOS/Linux, prefers ``python3.13`` then
-    ``python3`` then ``python``. The caller is responsible for making
-    sure PyInstaller is actually installed in the chosen interpreter.
+    On Windows tries the ``py -3.13`` launcher (ships with the official
+    installer) then ``python`` on PATH. On macOS/Linux tries
+    ``python3.13`` then ``python3`` then ``python``. The first candidate
+    that actually reports 3.13 wins; if none does, the build aborts and
+    lists the versions it found, so a bundle is never built on another
+    Python. The caller is responsible for making sure PyInstaller is
+    installed in the chosen interpreter.
     """
+    global _resolved_python
+    if _resolved_python is not None:
+        return _resolved_python
     if sys.platform == "win32":
-        if shutil.which("py"):
-            return ["py", "-3.13"]
-        if shutil.which("python"):
-            return ["python"]
-        die("找不到 Python 3.13,請先從 https://www.python.org/downloads/ 安裝")
-    for cand in ("python3.13", "python3", "python"):
-        path = shutil.which(cand)
-        if path:
-            return [path]
-    die("找不到 Python 3.13,請先安裝")
+        candidates = [["py", "-3.13"], ["python"]]
+    else:
+        candidates = [["python3.13"], ["python3"], ["python"]]
+    found: list[str] = []
+    for cand in candidates:
+        path = shutil.which(cand[0])
+        if not path:
+            continue
+        argv = [path, *cand[1:]]
+        version = _python_version(argv)
+        if version == REQUIRED_PYTHON:
+            _resolved_python = argv
+            return argv
+        label = "%d.%d" % version if version else "unknown"
+        found.append(f"{' '.join(cand)} → {label}")
+    want = "%d.%d" % REQUIRED_PYTHON
+    detail = ";找到:" + "、".join(found) if found else ""
+    die(f"找不到 Python {want}{detail}。請安裝 Python {want} 後再打包")
     return []  # unreachable — die() exits
 
 
