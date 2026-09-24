@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, PlugZap, Search, Usb, Wifi } from 'lucide-react'
 import { useDeviceContext } from '../../contexts/DeviceContext'
 import { useToastContext } from '../../contexts/ToastContext'
@@ -38,6 +38,14 @@ export default function DeviceAddView({ onConnected }: DeviceAddViewProps) {
   // Scan result list — every hit is shown with name + IP so the user can
   // see what was found; a single hit additionally auto-fills the form.
   const [discoverResults, setDiscoverResults] = useState<DiscoverResult[]>([])
+  // The popover unmounts this view on outside click / Esc, and the tunnel
+  // POST can run for up to two minutes. A failure that lands after unmount
+  // has nowhere to render inline, so it falls back to a toast.
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
   const handleDiscover = useCallback(async () => {
     setDiscovering(true)
@@ -98,9 +106,14 @@ export default function DeviceAddView({ onConnected }: DeviceAddViewProps) {
       )
       onConnected()
     } catch (err: unknown) {
+      if (!mountedRef.current) {
+        const detail = err instanceof Error && err.message ? `: ${err.message}` : ''
+        showToast(t('device.tunnel_failed') + detail, 6000)
+        return
+      }
       setTunnelError(err instanceof Error ? err.message : t('device.tunnel_failed'))
     } finally {
-      setTunnelConnecting(false)
+      if (mountedRef.current) setTunnelConnecting(false)
     }
   }, [tunnelIp, tunnelPort, device, showToast, t, onConnected])
 
