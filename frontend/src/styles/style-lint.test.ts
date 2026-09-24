@@ -69,4 +69,39 @@ describe('style lint', () => {
       .map(([name, file]) => `${name} (${file})`)
     expect(undefinedVars).toEqual([])
   })
+
+  it('components/**/*.tsx add no new hard-coded colours (DESIGN.md §10: use tokens)', () => {
+    // Known leftovers, as lines per file that contain a hex or rgb()/rgba()
+    // literal. A file may not exceed its count, and a count must be lowered
+    // when a leftover is moved onto a token, so the list only shrinks.
+    // Leaflet SVG attributes and var() fallbacks are legitimate reasons to
+    // keep a literal; everything else here is debt.
+    const BASELINE: Record<string, number> = {
+      'components/ErrorBoundary.tsx': 3,
+      'components/JoystickPad.tsx': 8,
+      'components/WaypointChain.tsx': 2,
+      'components/device/DeviceAddView.tsx': 1,
+      'components/device/DeviceListView.tsx': 1,
+      'components/device/deviceRowParts.tsx': 2,
+      'components/library/BookmarkRow.tsx': 4,
+      'components/library/BookmarksFooter.tsx': 1,
+      'components/shell/BottomDock.tsx': 5,
+      'components/shell/BottomModeBar.tsx': 2,
+      'components/shell/DdiMountingOverlay.tsx': 3,
+      'components/shell/DeviceLostBanner.tsx': 1,
+      'components/shell/Drawer.tsx': 5,
+      'components/shell/MiniStatusBar.tsx': 2,
+      'components/shell/SettingsMenu.tsx': 1,
+      'components/shell/dock/ActionGroup.tsx': 2,
+      'components/shell/dock/DockRouteCard.tsx': 1,
+      'components/shell/dock/ModeStatsCard.tsx': 4,
+      'components/shell/dock/SpeedToggle.tsx': 2,
+      'components/shell/dock/WaypointList.tsx': 2,
+    }
+    const re = /#[0-9a-fA-F]{3,8}\b|rgba?\(/
+    const components = walk(join(SRC, 'components'), ['.tsx'])
+    const actual: Record<string, number> = {}
+    for (const hit of scan(components, re)) actual[hit.file] = (actual[hit.file] ?? 0) + 1
+    expect(actual).toEqual(BASELINE)
+  })
 })

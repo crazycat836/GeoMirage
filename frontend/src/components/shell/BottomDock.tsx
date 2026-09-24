@@ -355,7 +355,7 @@ function RandomPreview() {
         <span className="inline-flex items-center gap-1.5 text-[10px] font-mono text-[var(--color-text-3)]">
           <span
             className="w-1.5 h-1.5 rounded-full"
-            style={{ background: '#34d399', boxShadow: '0 0 6px #34d399' }}
+            style={{ background: 'var(--color-success-text)', boxShadow: '0 0 6px var(--color-success-text)' }}
             aria-hidden="true"
           />
           {t('dock.wandering')}

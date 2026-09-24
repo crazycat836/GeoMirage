@@ -181,9 +181,9 @@ function StopRow({ pt, label, isStart, onRemove, onBookmark, dragHandle, setNode
       <span
         className="w-7 h-7 rounded-lg grid place-items-center"
         style={isStart ? {
-          background: 'rgba(52,211,153,0.14)',
-          color: '#6ee5b5',
-          border: '1px solid rgba(52,211,153,0.25)',
+          background: 'var(--color-origin-dim)',
+          color: 'var(--color-origin-text)',
+          border: '1px solid var(--color-origin-border)',
         } : {
           background: 'var(--color-accent-dim)',
           color: 'var(--color-accent-strong)',
@@ -209,7 +209,7 @@ function StopRow({ pt, label, isStart, onRemove, onBookmark, dragHandle, setNode
           <button
             type="button"
             onClick={() => onBookmark?.(pt.id)}
-            className="w-7 h-7 rounded-[7px] grid place-items-center text-[var(--color-text-3)] hover:text-[#ffb627] hover:bg-[rgba(255,182,39,0.08)] transition-colors cursor-pointer"
+            className="w-7 h-7 rounded-[7px] grid place-items-center text-[var(--color-text-3)] hover:text-[var(--color-device-paused)] hover:bg-[rgba(255,182,39,0.08)] transition-colors cursor-pointer"
             title={t('chain.bookmark')}
           >
             <Star className="w-[13px] h-[13px]" strokeWidth={2} />
@@ -218,7 +218,7 @@ function StopRow({ pt, label, isStart, onRemove, onBookmark, dragHandle, setNode
           <button
             type="button"
             onClick={() => onRemove(pt.id)}
-            className="w-7 h-7 rounded-[7px] grid place-items-center text-[var(--color-text-3)] hover:text-[#ff4757] hover:bg-[rgba(255,71,87,0.08)] transition-colors cursor-pointer"
+            className="w-7 h-7 rounded-[7px] grid place-items-center text-[var(--color-text-3)] hover:text-[var(--color-danger)] hover:bg-[rgba(255,71,87,0.08)] transition-colors cursor-pointer"
             title={t('chain.remove')}
           >
             <X className="w-[13px] h-[13px]" strokeWidth={2.5} />

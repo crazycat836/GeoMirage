@@ -59,10 +59,10 @@ function DockRoutePoint({ tone, label, coord, placeholder, onBookmark }: DockRou
   const t = useT()
   const empty = !coord
   const icPalette = tone === 'origin'
-    ? { bg: 'rgba(52,211,153,0.14)', bd: 'rgba(52,211,153,0.25)', fg: '#6ee5b5' }
+    ? { bg: 'var(--color-origin-dim)', bd: 'var(--color-origin-border)', fg: 'var(--color-origin-text)' }
     : empty
       ? { bg: 'var(--color-surface-ghost)', bd: 'var(--color-border-strong)', fg: 'var(--color-text-3)' }
-      : { bg: 'rgba(167, 139, 250,0.14)', bd: 'rgba(167, 139, 250,0.25)', fg: 'var(--color-accent-strong)' }
+      : { bg: 'var(--color-accent-dim)', bd: 'var(--color-accent-glow)', fg: 'var(--color-accent-strong)' }
 
   return (
     <div
@@ -117,7 +117,7 @@ function DockRoutePoint({ tone, label, coord, placeholder, onBookmark }: DockRou
           className={[
             'w-7 h-7 rounded-[7px] grid place-items-center',
             'text-[var(--color-text-3)]',
-            'hover:text-[#ffb627] hover:bg-[rgba(255,182,39,0.08)]',
+            'hover:text-[var(--color-device-paused)] hover:bg-[rgba(255,182,39,0.08)]',
             'transition-colors duration-150 cursor-pointer',
           ].join(' ')}
           aria-label={t('shell.bookmark_save')}
