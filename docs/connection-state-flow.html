@@ -315,7 +315,7 @@
     使用者不會接受 App 沒反應，所以後端必須：
   </p>
   <ul>
-    <li>能在 1 秒內感知到「USB 線拔了」</li>
+    <li>能在約 3 秒內感知到「USB 線拔了」（每秒查一次，連續 3 次看不到才算）</li>
     <li>能在 5 秒內感知到「Wi-Fi 不通了」</li>
     <li>遇到暫時性掉線時，能自動嘗試重連（而不是直接告訴使用者「裝置已斷線」）</li>
     <li>把這些變化即時推送到前端 UI</li>
@@ -375,14 +375,14 @@ flowchart LR
     classDef bad fill:#7f1d1d,stroke:#f87171,color:#fecaca
 
     A["① 打開 App"]:::step
-    B["② App 顯示<br/>已連上的 iPhone 列表"]:::step
+    B["② App 列出偵測到的 iPhone<br/>（此時還沒連線）"]:::step
     C{"連線方式？"}:::step
-    D["③a USB:<br/>插上即自動連線"]:::happy
+    D["③a USB:<br/>插上後出現在清單<br/>按「連線」才配對＋連線"]:::happy
     E["③b Wi-Fi:<br/>按「啟動 tunnel」"]:::happy
     F["④ 裝置變綠<br/>顯示「Connected」"]:::happy
     G["⑤ 設定假位置<br/>iPhone 立刻變到該地點"]:::happy
     H{"使用中<br/>連線出問題？"}:::step
-    I["⚠️ 短暫不穩<br/>UI 顯示「Reconnecting…」"]:::trouble
+    I["⚠️ 短暫不穩<br/>UI 顯示「重連中」"]:::trouble
     J["✅ 自動恢復"]:::happy
     K["❌ 真的斷了<br/>UI 顯示「Disconnected」"]:::bad
 
@@ -401,6 +401,13 @@ flowchart LR
     <strong>關鍵觀察：</strong> 步驟 ⑤ 之後的「使用中」階段，連線狀態其實會在
     <code>Connected</code> ↔ <code>Reconnecting</code> ↔ <code>Disconnected</code> 之間切換。
     後端用三種狀態 + 一台狀態機來精準表達這件事，下一節說明。
+  </div>
+
+  <div class="callout-info">
+    <strong>沒有自動連線：</strong> 插上 USB、或 App 啟動時，後端都不會自己連線或配對。
+    <code>GET /api/device/list</code> 只列出裝置（<code>autopair=False</code>，不會跳出「信任這部電腦」），
+    使用者在介面上按連線，才會呼叫 <code>POST /api/device/{udid}/connect</code> 配對並連線。
+    見 <code>backend/services/device_watchdog.py</code> 開頭的說明與 <code>backend/main.py</code> lifespan 裡的 “No startup auto-connect” 註解。
   </div>
 </section>
 
@@ -426,7 +433,7 @@ flowchart LR
       <tr>
         <td><code>DEGRADED</code></td>
         <td>連線抖了一下，正在嘗試恢復</td>
-        <td>黃色「重新連線中…」</td>
+        <td>琥珀色「重連中」（MiniStatusBar 的裝置 pill 變色並閃爍，裝置清單該列狀態顯示「重連中」）</td>
         <td>⚠️ 暫時不行（會 retry）</td>
       </tr>
     </tbody>
@@ -457,7 +464,7 @@ stateDiagram-v2
     CONNECTED --> DEGRADED: DVT channel 掉線<br/>(暫時)
     note right of DEGRADED
         WS 發送: tunnel_degraded
-        UI 顯示「Reconnecting…」
+        UI 顯示「重連中」
     end note
 
     DEGRADED --> CONNECTED: 重連成功
@@ -483,7 +490,7 @@ stateDiagram-v2
   <p>
     架構上，「狀態」放在一個叫 <code>ConnectionStateStore</code> 的物件裡（位於 <code>backend/services/connection_state.py</code>）。
     這個物件是 <strong>單一狀態來源</strong> ——
-    左邊有 8 個地方會寫入它，右邊有 3 個地方會讀。
+    左邊有 7 個地方會寫入它，右邊有 3 個地方會讀。
   </p>
 
   <div class="diagram">
@@ -498,14 +505,13 @@ flowchart LR
 
     subgraph WRITERS["📝 會改變狀態的程式（State Writers）"]
         direction TB
-        P1["USB 監控<br/>device_watchdog.py<br/>每秒 poll usbmux"]:::auto
+        P1["USB 拔除監控<br/>device_watchdog.py<br/>每秒 poll usbmux（只處理拔除）"]:::auto
         P2["手動連 / 斷線 API<br/>api/device.py<br/>POST/DELETE /connect"]:::user
-        P3["啟動 Wi-Fi tunnel<br/>api/tunnel/lifecycle.py"]:::user
+        P3["啟動 Wi-Fi tunnel 並連線<br/>api/tunnel/lifecycle.py<br/>→ _helpers.connect_device_over_tunnel"]:::user
         P4["Wi-Fi 健康監視<br/>tunnel_liveness.py<br/>每 5 秒 TCP probe"]:::monitor
         P5["Wi-Fi 拆連協調器<br/>wifi_tunnel_service.py"]:::recover
         P6["DVT 自動重連<br/>location_service.py"]:::recover
-        P7["API 強制重連<br/>api/location/_helpers.py"]:::recover
-        P8["App 啟動時自動連<br/>main.py:149"]:::auto
+        P7["API 裝置遺失 / 強制重連<br/>api/location/_helpers.py<br/>services/engine_recovery.py"]:::recover
     end
 
     SSOT[("ConnectionStateStore<br/>(SSoT)<br/><b>backend/services/connection_state.py</b>")]:::ssot
@@ -521,11 +527,10 @@ flowchart LR
 
     P1 --> SSOT
     P2 --> SSOT
-    P3 -. "⚠️ 未走 SSoT<br/>(見 §9)" .-> SSOT
+    P3 --> SSOT
     P4 --> P5 --> SSOT
     P6 --> SSOT
     P7 --> SSOT
-    P8 --> SSOT
 
     SSOT --> OBS
     OBS --> C3
@@ -549,9 +554,17 @@ flowchart LR
     結果就是常常彼此不一致 —— UI 顯示已連線，但實際下 GPS 指令會失敗。
   </p>
   <p>
-    把狀態統一到 <code>ConnectionStateStore</code> 之後，所有變化都要透過它的 API
-    (<code>connect_device</code>, <code>disconnect_device</code>, <code>mark_degraded</code>, <code>mark_recovered</code>)，
-    順帶觸發 WS 廣播。前端永遠跟得上後端，再也不會脫節。
+    把狀態統一到 <code>ConnectionStateStore</code> 之後，所有變化都要透過它的 API，順帶觸發 WS 廣播：
+  </p>
+  <ul>
+    <li><code>connect_device</code> / <code>disconnect_device</code>：連線或斷線，同時改 transport 與狀態。</li>
+    <li><code>teardown_device</code>：固定順序拆掉一台裝置 —— 先停 GPS 引擎（<code>terminate_engine</code>），再斷 transport，最後轉成 <code>DISCONNECTED</code>。引擎停止失敗也不會跳過斷線。</li>
+    <li><code>announce_connected</code>：transport 已經由呼叫端建好（Wi-Fi tunnel 走 <code>dm.connect_wifi_tunnel</code>），只更新狀態並廣播 <code>device_connected</code>。</li>
+    <li><code>reannounce_connected</code>：USB 拔掉後改走 Wi-Fi tunnel 時，先轉 <code>DISCONNECTED</code> 再轉回 <code>CONNECTED</code>，讓前端重畫 pill。</li>
+    <li><code>mark_degraded</code> / <code>mark_recovered</code>：DVT channel 重連期間的中間狀態。</li>
+  </ul>
+  <p>
+    前端因此永遠跟得上後端。
   </p>
 </section>
 
@@ -564,35 +577,40 @@ flowchart LR
   <div class="scenario-card">
     <div class="scenario-meta">
       <h3>情境 1：使用者把 iPhone 用 USB 線插上電腦</h3>
-      <span class="tag tag-auto">AUTO</span>
+      <span class="tag tag-user">USER</span>
     </div>
     <div class="real-talk">
-      <strong>會發生什麼：</strong> 後端有個每秒跑一次的 USB 監控 (<code>device_watchdog</code>)，
-      它會問 macOS 的 usbmux「現在插了哪些 iPhone？」。
-      只要看到一個新 UDID，就自動建立連線 + 推送 WS 訊息。
+      <strong>會發生什麼：</strong> 插上線本身不會連線。前端呼叫 <code>GET /api/device/list</code> 時，
+      <code>DeviceManager.discover_devices</code> 以 <code>autopair=False</code> 讀 usbmux，新裝置只會出現在清單裡，
+      不會配對、也不會跳出「信任這部電腦」。使用者按下連線，後端才配對並經過 SSoT 連線。
+      <code>device_watchdog</code> 刻意不處理「新裝置出現」。
     </div>
     <div class="diagram">
 <pre class="mermaid">
 sequenceDiagram
     autonumber
     participant USB as iPhone (USB)
-    participant W as device_watchdog<br/>(每秒一次)
+    participant UI as 前端 UI
+    participant API as api/device.py
     participant CS as ConnectionStateStore
     participant WS as WebSocket
-    participant UI as 前端 UI
 
     Note over USB: 使用者插上 USB 線
-    W->>USB: 查詢 usbmux: 「有哪些裝置？」
-    USB-->>W: [new_udid]
-    Note over W: 偵測到新 UDID
-    W->>CS: connect_device(new_udid, cause="auto_usb")
+    UI->>API: GET /api/device/list
+    API->>USB: discover_devices()<br/>(autopair=False，不配對)
+    USB-->>API: [new_udid]
+    API-->>UI: 清單多一台「未連線」裝置
+    Note over UI: 使用者按「連線」
+    UI->>API: POST /api/device/{udid}/connect
+    API->>CS: connect_device(udid, cause="user")
     Note over CS: 狀態: DISCONNECTED → CONNECTED
     CS->>WS: broadcast("device_connected", {udid, name, ios_version})
     WS->>UI: 推送
-    Note over UI: 列表新增綠色裝置
+    API->>API: create_engine_with_rollback()<br/>(引擎建立失敗就退回 DISCONNECTED)
+    Note over UI: 裝置變綠
 </pre>
     </div>
-    <div class="outcome"><strong>結果：</strong> 使用者插線後約 1 秒，UI 自動出現新裝置。</div>
+    <div class="outcome"><strong>結果：</strong> 插線後裝置出現在清單；只有使用者按連線，才會配對並連上。</div>
   </div>
 
   <!-- SCENARIO 2 -->
@@ -602,8 +620,9 @@ sequenceDiagram
       <span class="tag tag-auto">AUTO</span>
     </div>
     <div class="real-talk">
-      <strong>會發生什麼：</strong> 同樣是 USB 監控發現「咦這台 UDID 不在 usbmux 列表了」。
-      為了避免 usbmux 偶爾抽風漏報，<strong>必須連續 3 次都看不到才算真的拔了</strong>（約 3 秒緩衝）。
+      <strong>會發生什麼：</strong> USB 監控（<code>device_watchdog</code>）每秒問 usbmux 目前有哪些 USB 裝置，發現已連線的 UDID 不在列表了。
+      為了避免 usbmux 偶爾漏報，<strong>必須連續 3 次都看不到才算真的拔了</strong>（約 3 秒緩衝）。
+      如果這時有活著的 Wi-Fi tunnel，裝置會改走 tunnel（<code>reconnect_usb_over_wifi</code>），不會斷線。
     </div>
     <div class="diagram">
 <pre class="mermaid">
@@ -622,13 +641,18 @@ sequenceDiagram
         Note over W: miss_count[udid] += 1
     end
     Note over W: 連續 3 次未見 (≈3 秒)
-    W->>W: 停止該裝置的 GPS 引擎
-    W->>CS: disconnect_device(udid, cause="usb_removed")
-    Note over CS: 狀態: CONNECTED → DISCONNECTED
-    CS->>DD: emit "device_disconnected"
-    DD->>WS: broadcast("device_disconnected", {cause:"usb_removed"})
-    WS->>UI: 推送
-    Note over UI: 裝置標為灰色
+    alt Wi-Fi tunnel 還活著
+        W->>CS: reannounce_connected(udid, cause="usb_to_wifi_fallback")
+        Note over CS: DISCONNECTED 一下再回到 CONNECTED (Network)
+    else 沒有 tunnel
+        W->>W: terminate_engine(udid)<br/>先停 GPS 引擎
+        W->>CS: disconnect_device(udid, cause="usb_removed")
+        Note over CS: 狀態: CONNECTED → DISCONNECTED
+        CS->>DD: emit "device_disconnected"
+        DD->>WS: broadcast("device_disconnected", {cause:"usb_removed"})
+        WS->>UI: 推送
+        Note over UI: 裝置標為灰色
+    end
 </pre>
     </div>
     <div class="outcome"><strong>結果：</strong> 約 3 秒延遲，避免 false-positive 但保證真拔線一定會被偵測。</div>
@@ -643,7 +667,7 @@ sequenceDiagram
     <div class="real-talk">
       <strong>會發生什麼：</strong> 使用者正在用 GeoMirage 設定假位置，
       但 iPhone 螢幕鎖了 / Wi-Fi 抖了 2 秒，導致 DVT channel 斷掉。
-      這時 location service 會自動重連，期間狀態為 <code>DEGRADED</code>（UI 顯示「Reconnecting…」）。
+      這時 location service 會自動重連，期間狀態為 <code>DEGRADED</code>（UI 顯示「重連中」）。
     </div>
     <div class="diagram">
 <pre class="mermaid">
@@ -662,7 +686,7 @@ sequenceDiagram
     Note over CS: 狀態: CONNECTED → DEGRADED
     CS->>WS: broadcast("tunnel_degraded")
     WS->>UI: 推送
-    Note over UI: 裝置變黃,顯示 "Reconnecting…"
+    Note over UI: MiniStatusBar 的 pill 變琥珀色閃爍<br/>裝置清單該列顯示「重連中」
 
     loop 重試 (最多 5+1 次, 約 15 秒)
         LS->>LS: 重新建立 DVT instrument
@@ -674,7 +698,7 @@ sequenceDiagram
             Note over UI: 變回綠色,流程繼續
         else 兩次 timeout 或耗盡
             LS-->>API: raise DeviceLostError
-            API->>CS: disconnect_device(udid)
+            API->>CS: teardown_device(udid, cause)<br/>(先停引擎，再斷線)
             CS->>WS: broadcast("device_disconnected")
             WS->>UI: 推送
             Note over UI: 真的斷了,變灰色
@@ -683,7 +707,7 @@ sequenceDiagram
 </pre>
     </div>
     <div class="outcome">
-      <strong>結果：</strong> 大多數短暫抖動（&lt; 15 秒）使用者完全感覺不到中斷，只看到短暫的「Reconnecting…」黃色提示就恢復。
+      <strong>結果：</strong> 大多數短暫抖動（&lt; 15 秒）使用者完全感覺不到中斷，只看到短暫的「重連中」琥珀色提示就恢復。
     </div>
   </div>
 
@@ -733,7 +757,7 @@ sequenceDiagram
         Note over L: 取消 cleanup,避免誤殺
     else generation 沒變
         L->>SVC: cleanup_wifi_connections()
-        loop 對每個 Wi-Fi 裝置
+        loop 對每個走這條 tunnel 的裝置 (via_tunnel)
             SVC->>SVC: 關閉 GPS 引擎
             SVC->>CS: disconnect_device(udid, cause="wifi_dropped")
             CS->>WS: broadcast("device_disconnected")
@@ -743,7 +767,7 @@ sequenceDiagram
     end
 </pre>
     </div>
-    <div class="outcome"><strong>結果：</strong> Wi-Fi 真的死了之後最多 15 秒會被偵測 + 完整 cleanup，但短暫抖動不會誤殺。</div>
+    <div class="outcome"><strong>結果：</strong> Wi-Fi 真的死了之後最多 15 秒會被偵測 + 完整 cleanup，但短暫抖動不會誤殺。只清掉走 GeoMirage 自己 tunnel 的裝置（連線紀錄的 <code>via_tunnel</code> 為 true）；Finder「Wi-Fi 同步」的 usbmux Network 裝置有自己的 CoreDevice tunnel，不受影響。</div>
   </div>
 
   <!-- SCENARIO 5 -->
@@ -776,9 +800,9 @@ sequenceDiagram
         WS-->>UI: tunnel_degraded {reason: "snapshot"}
     end
 
-    Note over WS: 1 秒 debounce 後啟動背景探測
+    Note over WS: device_health.schedule_probes()<br/>同一 UDID 1 秒內只探測一次
     par 對每個 CONNECTED 裝置背景探測
-        WS->>LS: _probe_dvt_health_one(udid)<br/>2 秒 timeout
+        WS->>LS: probe_dvt_health_one(udid)
         alt 探測失敗
             WS->>CS: mark_degraded(udid)
             Note over CS: 進入 DEGRADED → 觸發情境 3 的重連
@@ -800,24 +824,30 @@ sequenceDiagram
     <div class="real-talk">
       <strong>會發生什麼：</strong> 某些 API 路徑（例如 <code>exec_with_retry</code>）
       在執行命令前，若發現底層狀態異常（找不到 engine、收到 DeviceLostError），
-      會做一個「先斷再連」的 hard reset，把整條鏈路打掉重練。
+      會呼叫 <code>services/engine_recovery.py</code> 的 <code>force_reconnect</code> 做「先斷再連」的 hard reset，把整條鏈路打掉重練。
       cause 標記為 <code>hard_reset</code>，前端會看到一個快速的斷-連週期。
+      走 GeoMirage Wi-Fi tunnel 的裝置（<code>via_tunnel</code>）usbmux 看不到，所以改從 tunnel 的 RSD 重新連線；tunnel 已經死了就放棄，交給 liveness loop 清理。
     </div>
     <div class="diagram">
 <pre class="mermaid">
 sequenceDiagram
     autonumber
     participant API as REST handler
-    participant H as _helpers
+    participant H as engine_recovery
     participant CS as ConnectionStateStore
     participant WS as WebSocket
 
-    API->>H: get_engine() / exec_with_retry()
+    API->>H: exec_with_retry() → force_reconnect()
     Note over H: 偵測異常: engine 不見 / DeviceLostError
 
-    H->>CS: disconnect_device(udid, cause="hard_reset")
+    H->>CS: teardown_device(udid, cause="hard_reset")<br/>(先停引擎，再斷線)
     CS->>WS: broadcast("device_disconnected")
-    H->>CS: connect_device(udid, cause="hard_reset")
+    alt 走 Wi-Fi tunnel (via_tunnel)
+        H->>H: dm.connect_wifi_tunnel(tunnel RSD)
+        H->>CS: announce_connected(udid, cause="hard_reset")
+    else USB / usbmux
+        H->>CS: connect_device(udid, cause="hard_reset")
+    end
     CS->>WS: broadcast("device_connected")
     H->>H: 重建 GPS 引擎
 </pre>
@@ -860,7 +890,7 @@ sequenceDiagram
     rect rgba(251,191,36,0.08)
         Note over UI: 點「Forget pair」 (取消配對)
         UI->>API: DELETE /api/device/{udid}/pair
-        API->>CS: disconnect_device(udid, cause="forget")
+        API->>CS: core/device_forget.py →<br/>disconnect_device(udid, cause="forget")
         CS->>WS: broadcast("device_disconnected", cause:"forget")
     end
 </pre>
@@ -880,7 +910,7 @@ sequenceDiagram
       <tr>
         <td><code>usbmux_presence_watchdog</code></td>
         <td>每 1 秒</td>
-        <td>USB 沒有 push event，必須 poll。決定情境 1 + 2 的反應速度。</td>
+        <td>USB 沒有 push event，必須 poll。只偵測拔除，決定情境 2 的反應速度（插入不處理，見情境 1）。</td>
       </tr>
       <tr>
         <td><code>tunnel_liveness_loop</code></td>
@@ -895,10 +925,10 @@ sequenceDiagram
       <tr>
         <td><code>_tunnel_watchdog</code></td>
         <td>one-shot</td>
-        <td>每次啟動 tunnel 時 spawn 一個，專門 await tunnel task；task 崩潰時負責 cleanup。</td>
+        <td>每次啟動 tunnel 時 spawn 一個（<code>api/tunnel/lifecycle.py</code>），專門 await tunnel task；task 崩潰時負責 cleanup。</td>
       </tr>
       <tr>
-        <td><code>_probe_connected_devices</code></td>
+        <td><code>device_health.probe_connected_devices</code></td>
         <td>每次新 WS 連線</td>
         <td>情境 5 用，防止 reload 後狀態脫節。</td>
       </tr>
@@ -909,7 +939,7 @@ sequenceDiagram
     <strong>併發安全的設計小細節：</strong> 所有這些 loop 都跑在 <strong>同一條 FastAPI/uvicorn asyncio event loop</strong> 上，
     這代表它們不會真的「同時」修改 <code>ConnectionStateStore</code> ——
     asyncio 的合作式調度保證了序列化。所以 <code>ConnectionStateStore</code> 內部 <strong>不需要顯式 Lock</strong>
-    (見 <code>connection_state.py:103</code> 的註解)。
+    (見 <code>connection_state.py</code> 中 <code>ConnectionStateStore</code> 的 docstring)。
   </div>
 </section>
 
@@ -925,15 +955,15 @@ sequenceDiagram
     </li>
     <li>
       <strong>backend/main.py</strong>（特別是 lifespan / startup 段）
-      看清楚啟動時哪些 observer 與背景任務被裝上去：<code>install_ws_observer()</code>、<code>usbmux_presence_watchdog</code>、<code>tunnel_liveness_loop</code>。
+      看清楚啟動時哪些 observer 與背景任務被裝上去：<code>install_ws_observer()</code>、<code>usbmux_presence_watchdog</code>、<code>tunnel_liveness_loop</code>。這裡刻意沒有啟動時自動連線。
     </li>
     <li>
       <strong>backend/services/device_watchdog.py</strong>
-      最簡單的 producer：插入 + 拔除。讀完你就掌握情境 1, 2 的全貌。
+      最簡單的 producer：只處理拔除（含改走 Wi-Fi tunnel 的 fallback）。情境 1 的連線看 <code>backend/api/device.py</code> 的 connect route。
     </li>
     <li>
       <strong>backend/api/websocket.py</strong>
-      切換到 consumer 視角。看 <code>_send_initial_state</code> 怎麼從 snapshot 組裝給前端，以及 DVT probe 怎麼補救脫節。
+      切換到 consumer 視角。看 <code>_send_initial_state</code> 怎麼從 snapshot 組裝給前端；補救脫節的探測在 <code>backend/services/device_health.py</code>。
     </li>
     <li>
       <strong>backend/core/tunnel_liveness.py + backend/services/wifi_tunnel_service.py</strong>
@@ -953,29 +983,25 @@ sequenceDiagram
 
 <!-- ============== GAP ============== -->
 <section id="gap">
-  <h2>9. 已知斷點：Wi-Fi tunnel 起連未走 SSoT</h2>
-  <div class="callout">
-    <p><strong>問題在哪：</strong> <code>POST /wifi/tunnel/start-and-connect</code>（位於 <code>backend/api/tunnel/lifecycle.py:289</code>）
-    直接呼叫 <code>dm.connect_wifi_tunnel(rsd_address, rsd_port)</code>，沒有走 <code>connection_state.connect_device()</code>。</p>
-
-    <p><strong>為什麼這是個問題：</strong></p>
-    <ul>
-      <li>store 沒收到 <code>DISCONNECTED → CONNECTED</code> 的 transition</li>
-      <li>WS Observer 因此不會發出 <code>device_connected</code> 廣播</li>
-      <li>前端只能靠 <code>GET /api/device/list</code> 的合併邏輯（device.py:46）才看得到這個 Wi-Fi 裝置</li>
-      <li>WS 通道在這個入口是「靜默的」—— 違反了 SSoT 應該統一所有 transition 的設計原則</li>
-    </ul>
-
-    <p><strong>如果你要修：</strong> 在 <code>lifecycle.py</code> 取得 <code>DeviceInfo</code> 之後，
-    呼叫 <code>store.transition(udid, CONNECTED, cause="wifi_tunnel_start", metadata={...})</code>。
-    這樣 WS 廣播就會自動觸發，前端可以拿掉 device list 合併的特殊邏輯。</p>
+  <h2>9. Wi-Fi tunnel 起連與 SSoT（已修復）</h2>
+  <div class="callout-info">
+    <p><code>POST /wifi/tunnel/start-and-connect</code>（<code>backend/api/tunnel/lifecycle.py</code>）與 <code>POST /wifi/tunnel</code>
+    共用 <code>backend/api/tunnel/_helpers.py</code> 的 <code>connect_device_over_tunnel</code>：</p>
+    <ol>
+      <li><code>dm.connect_wifi_tunnel(rsd_address, rsd_port)</code> 建立 transport（連線紀錄標記 <code>via_tunnel=True</code>）。
+        如果同一台已經以 USB 連著，先 <code>connection_state.teardown_device(..., cause="replaced_by_wifi_tunnel")</code> 停掉引擎並斷線，再連一次。</li>
+      <li><code>connection_state.announce_connected(..., connection_type="Network", cause="wifi_tunnel")</code> 把狀態寫進 SSoT，
+        WS Observer 因此廣播 <code>device_connected</code>；從 USB 換成 Network 時也會重新廣播，前端的 pill 會更新。</li>
+      <li><code>connection_state.create_engine_with_rollback</code> 建立 GPS 引擎，失敗就把狀態退回 <code>DISCONNECTED</code>。</li>
+    </ol>
+    <p>因此這條路徑和其他寫入者一樣經過 SSoT，§5 圖中的 P3 為實線。</p>
   </div>
 </section>
 
 </div><!-- /container -->
 
 <footer>
-  Generated 2026-05-19 · GeoMirage · <code>docs/connection-state-flow.html</code><br/>
+  Generated 2026-05-19 · Updated 2026-09-24 · GeoMirage · <code>docs/connection-state-flow.html</code><br/>
   <small>本文件假設讀者第一次接觸此專案，所有專有名詞於 §2 已有解釋。</small>
 </footer>
 
