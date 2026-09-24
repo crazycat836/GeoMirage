@@ -40,7 +40,14 @@ export function useSerializedReorder(
     } catch (err) {
       devLog(label, err)
     } finally {
-      await refresh()
+      // A failed refresh must not leave the guard stuck (every later drag
+      // would only queue and never POST) or reject into a fire-and-forget
+      // caller.
+      try {
+        await refresh()
+      } catch (err) {
+        devLog(label, err)
+      }
       inflightRef.current = false
       const queued = pendingRef.current
       pendingRef.current = null
