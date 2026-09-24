@@ -16,6 +16,7 @@ import ConfirmDialog from '../ui/ConfirmDialog'
 import SearchField from '../ui/SearchField'
 import ChipFilterBar, { type Chip } from '../ui/ChipFilterBar'
 import RouteCategoryManagerDialog from './RouteCategoryManagerDialog'
+import RouteOverwriteDialog from './RouteOverwriteDialog'
 import InlineRenameInput, { INLINE_RENAME_HEIGHT_PX } from '../ui/InlineRenameInput'
 import SortableHandleRow from '../ui/SortableHandleRow'
 import ReorderableList from '../ui/ReorderableList'
@@ -579,23 +580,14 @@ export default function RoutesPanel({ onRouteLoaded }: RoutesPanelProps) {
         onCancel={() => setConfirmBatchDelete(false)}
       />
 
-      {/* Same-name overwrite dialog — three-way prompt via ConfirmDialog:
-          primary action "Overwrite", secondary "Save as new" (mapped onto
-          the cancel button so users on a touch device can dismiss with
-          the standard close gesture and still get a sensible default). */}
+      {/* Same-name overwrite dialog — Cancel / Save as new / Overwrite.
+          Cancel (incl. Esc / backdrop) saves nothing and keeps the typed name. */}
       {overwriteDialog && (
-        <ConfirmDialog
-          open
-          title={t('panel.route_overwrite_title')}
-          description={t('panel.route_overwrite_body', {
-            name: overwriteDialog.name,
-            created: (overwriteDialog.existingCreatedAt ?? '').slice(0, 10),
-          })}
-          confirmLabel={t('panel.route_overwrite_btn')}
-          cancelLabel={t('panel.route_save_new_btn')}
-          tone="default"
-          onConfirm={() => void resolveOverwrite('overwrite')}
-          onCancel={() => void resolveOverwrite('new')}
+        <RouteOverwriteDialog
+          name={overwriteDialog.name}
+          existingCreatedAt={overwriteDialog.existingCreatedAt}
+          onResolve={(policy) => void resolveOverwrite(policy)}
+          onCancel={() => setOverwriteDialog(null)}
         />
       )}
 

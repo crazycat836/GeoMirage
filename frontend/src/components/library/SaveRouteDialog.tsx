@@ -6,7 +6,7 @@ import { useToastContext } from '../../contexts/ToastContext'
 import { useT } from '../../i18n'
 import { ICON_SIZE } from '../../lib/icons'
 import Modal from '../Modal'
-import ConfirmDialog from '../ui/ConfirmDialog'
+import RouteOverwriteDialog from './RouteOverwriteDialog'
 
 interface SaveRouteDialogProps {
   open: boolean
@@ -150,20 +150,14 @@ export default function SaveRouteDialog({ open, onClose }: SaveRouteDialogProps)
         </div>
       </Modal>
 
-      {/* Same-name conflict — Overwrite vs Save-as-new, matching RoutesPanel. */}
+      {/* Same-name conflict — Cancel / Save as new / Overwrite, matching RoutesPanel.
+          Cancel drops back to this dialog with the typed name intact. */}
       {overwrite && (
-        <ConfirmDialog
-          open
-          title={t('panel.route_overwrite_title')}
-          description={t('panel.route_overwrite_body', {
-            name: overwrite.name,
-            created: (overwrite.existingCreatedAt ?? '').slice(0, 10),
-          })}
-          confirmLabel={t('panel.route_overwrite_btn')}
-          cancelLabel={t('panel.route_save_new_btn')}
-          tone="default"
-          onConfirm={() => void resolveOverwrite('overwrite')}
-          onCancel={() => void resolveOverwrite('new')}
+        <RouteOverwriteDialog
+          name={overwrite.name}
+          existingCreatedAt={overwrite.existingCreatedAt}
+          onResolve={(policy) => void resolveOverwrite(policy)}
+          onCancel={() => setOverwrite(null)}
         />
       )}
     </>
