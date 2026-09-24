@@ -90,3 +90,21 @@ def test_append_file_is_private(tmp_path: Path) -> None:
     when = datetime(2026, 9, 14, 12, 0)
     log.append([{"type": "click"}], now=when)
     assert (log.path_for(when).stat().st_mode & 0o777) == 0o600
+
+
+def test_append_hands_usage_dir_back_under_sudo(tmp_path: Path, monkeypatch) -> None:
+    """A root run must not leave usage/ root-owned, or every later
+    unprivileged append fails and /api/usage/events returns written=0."""
+    import os
+    from unittest.mock import patch
+
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    monkeypatch.setenv("SUDO_UID", "501")
+    monkeypatch.setenv("SUDO_GID", "20")
+    usage_dir = tmp_path / "usage"
+
+    with patch.object(os, "chown") as mock_chown, patch.object(os, "fchown") as mock_fchown:
+        assert UsageLog(usage_dir).append([{"type": "click"}]) == 1
+
+    assert usage_dir in {c.args[0] for c in mock_chown.call_args_list}
+    assert mock_fchown.called

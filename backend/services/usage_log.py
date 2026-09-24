@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
-from services.json_safe import open_private_append
+from services.json_safe import chown_back, open_private_append
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,9 @@ class UsageLog:
         try:
             with self._lock:
                 self._dir.mkdir(parents=True, exist_ok=True)
+                # Under sudo, keep usage/ owned by the user so a later
+                # unprivileged run can still create the monthly file.
+                chown_back(self._dir)
                 # 0600, sudo-invoker-owned, and never through a symlink.
                 with open_private_append(target) as fh:
                     fh.write("\n".join(lines) + "\n")

@@ -24,7 +24,7 @@ from pathlib import Path
 
 import uvicorn
 
-from services.json_safe import open_private_append
+from services.json_safe import chown_back, open_private_append
 
 
 _LOG_PREFIX_FMT = "%(asctime)s %(levelname)s %(name)s:"
@@ -164,11 +164,13 @@ _QUIET_HTTP_LOGGERS = ("httpx", "httpcore")
 
 
 def _restrict_rotated_logs(log_dir: Path) -> None:
-    """Tighten ``backend.log.N`` left at 0644 by older versions to 0600."""
+    """Tighten ``backend.log.N`` left at 0644 by older versions to 0600
+    and, under sudo, hand them back to the invoking user."""
     for path in log_dir.glob("backend.log.*"):
         try:
             if not path.is_symlink():
                 path.chmod(0o600)
+                chown_back(path)
         except OSError:
             pass
 
@@ -187,6 +189,9 @@ def setup_logging(log_dir: Path) -> logging.Logger:
     file_error: Exception | None = None
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
+        # Under sudo, keep logs/ owned by the user so a later
+        # unprivileged run can still create and rotate backend.log.
+        chown_back(log_dir)
         file_handler = _PrivateRotatingFileHandler(
             log_dir / "backend.log",
             maxBytes=_FILE_MAX_BYTES,

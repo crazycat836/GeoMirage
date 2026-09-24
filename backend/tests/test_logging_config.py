@@ -95,3 +95,23 @@ def test_existing_rotated_logs_are_made_private(tmp_path: Path) -> None:
     logging_config.setup_logging(log_dir)
 
     assert (old.stat().st_mode & 0o777) == 0o600
+
+
+def test_log_dir_and_backups_are_handed_back_under_sudo(tmp_path: Path, monkeypatch) -> None:
+    """A root run must not leave logs/ root-owned, or the next
+    unprivileged run can't create or rotate backend.log."""
+    import os
+    from unittest.mock import patch
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    (log_dir / "backend.log.1").write_text("old\n", encoding="utf-8")
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    monkeypatch.setenv("SUDO_UID", "501")
+    monkeypatch.setenv("SUDO_GID", "20")
+
+    with patch.object(os, "chown") as mock_chown, patch.object(os, "fchown"):
+        logging_config.setup_logging(log_dir)
+
+    chowned = {c.args[0] for c in mock_chown.call_args_list}
+    assert {log_dir, log_dir / "backend.log.1"} <= chowned
