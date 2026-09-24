@@ -15,7 +15,10 @@ import type { WsMessage } from './useWebSocket'
  *   FIRST server frame arrives (firstMessageReceivedRef).
  * - On close, a reconnect is scheduled at the current backoff delay; the
  *   delay grows 1.5x per cycle from RECONNECT_INTERVAL (3000) and caps
- *   at MAX_RECONNECT_INTERVAL (30000); a successful open resets it.
+ *   at MAX_RECONNECT_INTERVAL (30000); the first server frame on a socket
+ *   resets it (a bare TCP open does not).
+ * - A close with code 4001 (backend auth rejected) sets `authFailed` and
+ *   backs off straight to MAX_RECONNECT_INTERVAL.
  * - On open, an auth frame `{type:'auth', token}` is sent first, with the
  *   token resolved from the Electron preload bridge
  *   `globalThis.geoMirage.getSessionToken()` (empty string when the
@@ -41,7 +44,7 @@ class MockWebSocket {
 
   onopen: (() => unknown) | null = null
   onmessage: ((event: { data: string }) => void) | null = null
-  onclose: (() => void) | null = null
+  onclose: ((event: { code: number }) => void) | null = null
   onerror: (() => void) | null = null
 
   constructor(url: string) {
@@ -55,7 +58,7 @@ class MockWebSocket {
 
   close(): void {
     this.readyState = MockWebSocket.CLOSED
-    this.onclose?.()
+    this.onclose?.({ code: 1000 })
   }
 
   // --- test drivers -------------------------------------------------------
@@ -73,9 +76,9 @@ class MockWebSocket {
     this.onmessage?.({ data })
   }
 
-  simulateServerClose(): void {
+  simulateServerClose(code = 1006): void {
     this.readyState = MockWebSocket.CLOSED
-    this.onclose?.()
+    this.onclose?.({ code })
   }
 }
 
@@ -337,7 +340,7 @@ describe('useWebSocket — reconnect backoff', () => {
     expect(expectedWaits[expectedWaits.length - 1]).toBe(MAX_RECONNECT_INTERVAL)
   })
 
-  it('resets the backoff to RECONNECT_INTERVAL after a successful open', async () => {
+  it('resets the backoff to RECONNECT_INTERVAL once the server sends a frame', async () => {
     renderHook(() => useWebSocket())
 
     // Grow the backoff through two failed cycles (3000ms, then 4500ms).
@@ -355,9 +358,12 @@ describe('useWebSocket — reconnect backoff', () => {
     })
     expect(MockWebSocket.instances).toHaveLength(3)
 
-    // A successful open resets the delay back to the base interval.
+    // The first server frame resets the delay back to the base interval.
     await act(async () => {
       latestSocket().simulateOpen()
+    })
+    act(() => {
+      latestSocket().simulateServerFrame({ type: 'cooldown_update', data: {} })
     })
     act(() => {
       latestSocket().simulateServerClose()
@@ -370,6 +376,50 @@ describe('useWebSocket — reconnect backoff', () => {
       vi.advanceTimersByTime(1)
     })
     expect(MockWebSocket.instances).toHaveLength(4)
+  })
+})
+
+describe('useWebSocket — auth rejected (close code 4001)', () => {
+  it('does not reset the backoff on a bare open that the server then closes', async () => {
+    renderHook(() => useWebSocket())
+    act(() => { latestSocket().simulateServerClose() })
+    act(() => { vi.advanceTimersByTime(3000) })
+    expect(MockWebSocket.instances).toHaveLength(2)
+
+    // Open without any server frame, then close: the delay must keep
+    // growing (4500ms), not snap back to 3000ms.
+    await act(async () => { latestSocket().simulateOpen() })
+    act(() => { latestSocket().simulateServerClose() })
+    act(() => { vi.advanceTimersByTime(RECONNECT_INTERVAL) })
+    expect(MockWebSocket.instances).toHaveLength(2)
+    act(() => { vi.advanceTimersByTime(1500) })
+    expect(MockWebSocket.instances).toHaveLength(3)
+  })
+
+  it('flags authFailed and backs off to MAX_RECONNECT_INTERVAL on 4001', async () => {
+    const { result } = renderHook(() => useWebSocket())
+    expect(result.current.authFailed).toBe(false)
+
+    await act(async () => { latestSocket().simulateOpen() })
+    act(() => { latestSocket().simulateServerClose(4001) })
+    expect(result.current.authFailed).toBe(true)
+
+    act(() => { vi.advanceTimersByTime(RECONNECT_INTERVAL * 2) })
+    expect(MockWebSocket.instances).toHaveLength(1)
+    act(() => { vi.advanceTimersByTime(MAX_RECONNECT_INTERVAL - RECONNECT_INTERVAL * 2) })
+    expect(MockWebSocket.instances).toHaveLength(2)
+  })
+
+  it('clears authFailed once a later socket is accepted', async () => {
+    const { result } = renderHook(() => useWebSocket())
+    await act(async () => { latestSocket().simulateOpen() })
+    act(() => { latestSocket().simulateServerClose(4001) })
+    act(() => { vi.advanceTimersByTime(MAX_RECONNECT_INTERVAL) })
+
+    await act(async () => { latestSocket().simulateOpen() })
+    act(() => { latestSocket().simulateServerFrame({ type: 'cooldown_update', data: {} }) })
+    expect(result.current.authFailed).toBe(false)
+    expect(result.current.connected).toBe(true)
   })
 })
 

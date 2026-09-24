@@ -14,9 +14,12 @@ export default function ConnectionStatusBanner() {
   const { hint } = useConnectionHealth()
   const t = useT()
 
-  if (hint !== 'ws_reconnecting' && hint !== 'ws_offline') return null
+  if (hint !== 'ws_reconnecting' && hint !== 'ws_offline' && hint !== 'ws_auth_failed') return null
 
-  const isOffline = hint === 'ws_offline'
+  // Auth rejection gets the offline treatment (it needs user action) but
+  // its own copy, so it isn't mistaken for a plain disconnect.
+  const isAuthFailed = hint === 'ws_auth_failed'
+  const isOffline = hint === 'ws_offline' || isAuthFailed
   return (
     <div
       // Offline is a blocking outage — escalate to assertive so screen
@@ -31,9 +34,9 @@ export default function ConnectionStatusBanner() {
       ) : (
         <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" strokeWidth={2} />
       )}
-      <span>{t(isOffline ? 'conn.ws_offline' : 'conn.ws_reconnecting')}</span>
+      <span>{t(isAuthFailed ? 'conn.ws_auth_failed' : isOffline ? 'conn.ws_offline' : 'conn.ws_reconnecting')}</span>
       {isOffline && (
-        <span className="opacity-75 hidden sm:inline">· {t('conn.ws_offline_hint')}</span>
+        <span className="opacity-75 hidden sm:inline">· {t(isAuthFailed ? 'conn.ws_auth_failed_hint' : 'conn.ws_offline_hint')}</span>
       )}
     </div>
   )

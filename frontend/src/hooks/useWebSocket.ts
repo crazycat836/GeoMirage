@@ -13,6 +13,9 @@ export interface WsMessage {
 const WS_URL = WS_BASE
 const RECONNECT_INTERVAL = 3000
 const MAX_RECONNECT_INTERVAL = 30000
+// Backend closes with this code when the auth frame is rejected
+// (backend/api/websocket.py `_WS_AUTH_FAIL_CODE`).
+const WS_AUTH_FAIL_CODE = 4001
 
 /**
  * WebSocket hook using a subscribe-callback pattern for message delivery.
@@ -29,6 +32,10 @@ const MAX_RECONNECT_INTERVAL = 30000
  */
 export function useWebSocket() {
   const [connected, setConnected] = useState(false)
+  // True after the backend rejected our auth frame (close code 4001), until
+  // a later socket is accepted. Usually means the token on disk belongs to a
+  // different backend than the one holding the port.
+  const [authFailed, setAuthFailed] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const subscribersRef = useRef<Set<(m: WsMessage) => void>>(new Set())
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -94,8 +101,9 @@ export function useWebSocket() {
         // NB: `connected` is intentionally NOT set here. We wait for the
         // backend's first response (initial-state push: cooldown_update +
         // device_snapshot, fired from _send_initial_state) so the UI can
-        // distinguish "TCP open" from "live and serving".
-        reconnectDelay.current = RECONNECT_INTERVAL
+        // distinguish "TCP open" from "live and serving". The backoff is
+        // reset there too: a TCP open that the backend then rejects must
+        // not snap the retry interval back to 3s.
       }
 
       ws.onmessage = (event) => {
@@ -105,7 +113,9 @@ export function useWebSocket() {
         // (which proves the peer is alive) flips the state correctly.
         if (!firstMessageReceivedRef.current) {
           firstMessageReceivedRef.current = true
+          reconnectDelay.current = RECONNECT_INTERVAL
           setConnected(true)
+          setAuthFailed(false)
         }
         try {
           const msg: WsMessage = JSON.parse(event.data)
@@ -118,11 +128,18 @@ export function useWebSocket() {
         }
       }
 
-      ws.onclose = () => {
+      ws.onclose = (event?: CloseEvent) => {
         if (!mountedRef.current) return
         setConnected(false)
         firstMessageReceivedRef.current = false
         wsRef.current = null
+        if (event?.code === WS_AUTH_FAIL_CODE) {
+          // Retrying every few seconds cannot fix a token mismatch. Keep a
+          // slow retry (a restarted backend writes a new token that the
+          // Electron bridge re-reads) and let the UI say why.
+          setAuthFailed(true)
+          reconnectDelay.current = MAX_RECONNECT_INTERVAL
+        }
         scheduleReconnect()
       }
 
@@ -176,5 +193,5 @@ export function useWebSocket() {
     }
   }, [connect, cleanup])
 
-  return { connected, subscribe, sendMessage }
+  return { connected, authFailed, subscribe, sendMessage }
 }

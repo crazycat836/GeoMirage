@@ -76,6 +76,8 @@ export const STRINGS = {
   'conn.ws_reconnecting': { zh: '與背景服務連線中…', en: 'Reconnecting to backend…' },
   'conn.ws_offline': { zh: '背景服務無回應', en: 'Backend unreachable' },
   'conn.ws_offline_hint': { zh: '請確認 App 未被關閉,或重新啟動程式', en: 'Check that the app is still running, or restart it' },
+  'conn.ws_auth_failed': { zh: '背景服務驗證失敗', en: 'Backend rejected the connection' },
+  'conn.ws_auth_failed_hint': { zh: '可能有舊的背景服務還在執行,請完全結束 App 後重新啟動', en: 'An old backend may still be running; quit the app fully and restart it' },
   'conn.stale_tooltip': { zh: '狀態可能不是最新的', en: 'Status may be stale' },
   'conn.not_ready_tooltip': { zh: '背景服務未就緒,無法執行', en: 'Backend not ready; action unavailable' },
 

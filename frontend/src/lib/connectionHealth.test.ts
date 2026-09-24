@@ -138,4 +138,18 @@ describe('deriveConnectionHealth', () => {
     const ok = deriveConnectionHealth({ ...baseInput, connectedCount: 1 })
     expect(ok.canOperate).toBe(true)
   })
+
+  it('reports ws_auth_failed instead of reconnecting/offline when auth was rejected', () => {
+    const down = { ...baseInput, wsConnected: false, wsAuthFailed: true }
+    expect(deriveConnectionHealth({ ...down, disconnectedAt: baseInput.now }).hint).toBe('ws_auth_failed')
+    expect(deriveConnectionHealth({
+      ...down,
+      disconnectedAt: baseInput.now - OFFLINE_THRESHOLD_MS * 2,
+    }).hint).toBe('ws_auth_failed')
+  })
+
+  it('ignores a stale auth-failed flag once WS is open', () => {
+    const h = deriveConnectionHealth({ ...baseInput, wsAuthFailed: true })
+    expect(h.hint).toBeNull()
+  })
 })

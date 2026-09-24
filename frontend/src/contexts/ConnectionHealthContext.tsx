@@ -16,7 +16,7 @@ export type { ConnectionHealth, DeviceHealth, HealthHint, WsState }
 const ConnectionHealthContext = createContext<ConnectionHealth | null>(null)
 
 export function ConnectionHealthProvider({ children }: { children: React.ReactNode }) {
-  const { connected: wsConnected } = useWebSocketContext()
+  const { connected: wsConnected, authFailed: wsAuthFailed } = useWebSocketContext()
   const device = useDeviceContext()
 
   // `disconnectedAt` is React state (not a ref) so the derived memo
@@ -55,6 +55,7 @@ export function ConnectionHealthProvider({ children }: { children: React.ReactNo
   const health = useMemo<ConnectionHealth>(
     () => deriveConnectionHealth({
       wsConnected,
+      wsAuthFailed,
       disconnectedAt,
       now: Date.now(),
       connectedCount,
@@ -63,7 +64,7 @@ export function ConnectionHealthProvider({ children }: { children: React.ReactNo
     // `thresholdTick` is in the deps so the memo re-runs when the
     // setTimeout fires; its value is otherwise unused.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [wsConnected, disconnectedAt, connectedCount, lostCount, thresholdTick],
+    [wsConnected, wsAuthFailed, disconnectedAt, connectedCount, lostCount, thresholdTick],
   )
 
   return (

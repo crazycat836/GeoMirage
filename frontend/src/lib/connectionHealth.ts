@@ -8,7 +8,7 @@
 
 export type WsState = 'open' | 'reconnecting' | 'offline'
 export type DeviceHealth = 'connected' | 'lost' | 'none' | 'stale'
-export type HealthHint = null | 'ws_reconnecting' | 'ws_offline' | 'device_lost'
+export type HealthHint = null | 'ws_reconnecting' | 'ws_offline' | 'ws_auth_failed' | 'device_lost'
 
 export interface ConnectionHealth {
   ws: WsState
@@ -30,6 +30,9 @@ export const OFFLINE_THRESHOLD_MS = 10_000
 
 export interface DeriveInput {
   wsConnected: boolean
+  /** The backend rejected the WS auth frame (close code 4001). Only
+   *  consulted while WS is down. */
+  wsAuthFailed?: boolean
   /** Timestamp (ms) when WS last transitioned open→closed. `null`
    *  when WS is currently open (or has never been down). */
   disconnectedAt: number | null
@@ -70,7 +73,10 @@ export function deriveConnectionHealth(input: DeriveInput): ConnectionHealth {
   // Severity order: WS outage dominates (nothing works), then device
   // loss. Consumers showing a single banner can just read `hint`.
   let hint: HealthHint = null
-  if (ws === 'offline') hint = 'ws_offline'
+  // An auth rejection won't fix itself by waiting, so it replaces the
+  // generic reconnecting/offline copy with an actionable one.
+  if (ws !== 'open' && input.wsAuthFailed) hint = 'ws_auth_failed'
+  else if (ws === 'offline') hint = 'ws_offline'
   else if (ws === 'reconnecting') hint = 'ws_reconnecting'
   else if (device === 'lost') hint = 'device_lost'
 
