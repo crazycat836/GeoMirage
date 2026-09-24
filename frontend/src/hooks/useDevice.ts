@@ -40,11 +40,10 @@ export function useDevice(subscribe?: WsSubscribe) {
   const [lastDeviceError, setLastDeviceError] = useState<DeviceLastError | null>(null)
 
   // Bumped every time a WS-driven state change is applied (connected /
-  // disconnected / reconnected). Used by REST flows (scan/connect/
-  // disconnect) to detect "did a WS event race past me while I was
+  // disconnected / snapshot). Used by the REST flows (scan / connect /
+  // forget) to detect "did a WS event race past me while I was
   // awaiting?" — if so, the WS event is authoritative and we skip the
-  // post-await `setDevices` apply that would clobber it. See the
-  // auto-connect path in `scan` for the canonical use.
+  // post-await `setDevices` apply that would clobber it.
   const wsEventGenRef = useRef(0)
   const bumpWsGen = useCallback(() => { wsEventGenRef.current += 1 }, [])
 
@@ -70,9 +69,13 @@ export function useDevice(subscribe?: WsSubscribe) {
       lastPollAtRef.current = Date.now()
     }
     if (!isPoll) setScanning(true)
+    // /api/device/list can take seconds (one lockdown query per device);
+    // a WS event that lands meanwhile is newer than this answer.
+    const wsGen = wsEventGenRef.current
     try {
       const result = await listDevices()
       const list: DeviceInfo[] = Array.isArray(result) ? result : []
+      if (wsEventGenRef.current !== wsGen) return list
       // Skip the setState when every visible field matches — avoids
       // handing downstream useMemo/useEffect a new array reference for
       // no reason (a fresh `list` from `await listDevices()` is always
@@ -135,7 +138,7 @@ export function useDevice(subscribe?: WsSubscribe) {
 
   const connect = useCallback(
     async (udid: string) => {
-      // Race protection: see `scan` auto-connect path. If WS already
+      // Race protection: same as `scan`. If WS already
       // told us about a state change during the await, skip the apply.
       const wsGen = wsEventGenRef.current
       try {
