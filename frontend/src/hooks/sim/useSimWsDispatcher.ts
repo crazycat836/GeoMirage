@@ -33,55 +33,23 @@ import { asNumber, asObject, asString } from '../../lib/ws-guards'
 import type { LatLng } from './types'
 import type { DeviceRuntime, RuntimesMap } from './useSimRuntimes'
 import type { WsMessage } from '../useWebSocket'
+import type {
+  DdiMountMissingEvent,
+  LapCompleteEvent,
+  PauseCountdownEvent,
+  PositionUpdateEvent,
+  RoutePathEvent,
+  StateChangeEvent,
+  WaypointProgressEvent,
+  WsEventType,
+} from '../../generated/api-contract'
 
 // ── Typed WS payloads ──────────────────────────────────────────────────
+// Parsers return the codegen'd contract shapes (`Partial<…>` because each
+// field is runtime-guarded and may be dropped), so a backend field rename
+// surfaces as a TypeScript error here.
 
-interface PositionUpdatePayload {
-  udid?: string
-  lat?: number
-  lng?: number
-  progress?: number
-  eta?: number
-  eta_seconds?: number
-  distance_remaining?: number
-  distance_traveled?: number
-  speed_mps?: number
-}
-
-interface RoutePathPayload {
-  udid?: string
-  coords?: ReadonlyArray<{ lat?: number; lng?: number } | [number, number]>
-}
-
-interface StateChangePayload {
-  udid?: string
-  state?: string
-}
-
-interface WaypointProgressPayload {
-  udid?: string
-  current_index?: number
-  next_index?: number
-  total?: number
-}
-
-interface LapCompletePayload {
-  lap?: number
-  total?: number
-}
-
-interface PauseCountdownPayload {
-  duration_seconds?: number
-}
-
-interface DdiMountMissingPayload {
-  reason?: string
-  stage?: string
-  udid?: string
-  hint_key?: string
-}
-
-function parsePositionUpdate(data: unknown): PositionUpdatePayload | null {
+function parsePositionUpdate(data: unknown): Partial<PositionUpdateEvent> | null {
   const o = asObject(data)
   if (!o) return null
   return {
@@ -89,7 +57,6 @@ function parsePositionUpdate(data: unknown): PositionUpdatePayload | null {
     lat: asNumber(o.lat),
     lng: asNumber(o.lng),
     progress: asNumber(o.progress),
-    eta: asNumber(o.eta),
     eta_seconds: asNumber(o.eta_seconds),
     distance_remaining: asNumber(o.distance_remaining),
     distance_traveled: asNumber(o.distance_traveled),
@@ -97,22 +64,22 @@ function parsePositionUpdate(data: unknown): PositionUpdatePayload | null {
   }
 }
 
-function parseRoutePath(data: unknown): RoutePathPayload | null {
+function parseRoutePath(data: unknown): Partial<RoutePathEvent> | null {
   const o = asObject(data)
   if (!o) return null
   return {
     udid: asString(o.udid),
-    coords: Array.isArray(o.coords) ? o.coords as RoutePathPayload['coords'] : undefined,
+    coords: Array.isArray(o.coords) ? o.coords as RoutePathEvent['coords'] : undefined,
   }
 }
 
-function parseStateChange(data: unknown): StateChangePayload | null {
+function parseStateChange(data: unknown): Partial<StateChangeEvent> | null {
   const o = asObject(data)
   if (!o) return null
   return { udid: asString(o.udid), state: asString(o.state) }
 }
 
-function parseWaypointProgress(data: unknown): WaypointProgressPayload | null {
+function parseWaypointProgress(data: unknown): Partial<WaypointProgressEvent> | null {
   const o = asObject(data)
   if (!o) return null
   return {
@@ -123,19 +90,19 @@ function parseWaypointProgress(data: unknown): WaypointProgressPayload | null {
   }
 }
 
-function parseLapComplete(data: unknown): LapCompletePayload | null {
+function parseLapComplete(data: unknown): Partial<LapCompleteEvent> | null {
   const o = asObject(data)
   if (!o) return null
   return { lap: asNumber(o.lap), total: asNumber(o.total) }
 }
 
-function parsePauseCountdown(data: unknown): PauseCountdownPayload | null {
+function parsePauseCountdown(data: unknown): Partial<PauseCountdownEvent> | null {
   const o = asObject(data)
   if (!o) return null
   return { duration_seconds: asNumber(o.duration_seconds) }
 }
 
-function parseDdiMountMissing(data: unknown): DdiMountMissingPayload {
+function parseDdiMountMissing(data: unknown): Partial<DdiMountMissingEvent> {
   const o = asObject(data) ?? {}
   return {
     reason: asString(o.reason),
@@ -152,7 +119,7 @@ function extractUdid(data: unknown): string | undefined {
 
 // Coerce a tuple/object polyline point into LatLng. Used when a route_path
 // payload carries [lat, lng] arrays instead of {lat, lng} objects.
-function coordOf(p: { lat?: number; lng?: number } | [number, number] | unknown): LatLng {
+function coordOf(p: unknown): LatLng {
   if (Array.isArray(p)) return { lat: p[0] as number, lng: p[1] as number }
   const po = asObject(p) ?? {}
   return { lat: asNumber(po.lat) ?? 0, lng: asNumber(po.lng) ?? 0 }
@@ -167,7 +134,6 @@ export type WsSubscribe = (fn: (m: WsMessage) => void) => () => void
 // WS handler below — anchored to the generated `WsEventType` union so a
 // backend rename/removal propagates as a TypeScript error here instead
 // of a silent miss.
-import type { WsEventType } from '../../generated/api-contract'
 export type SimErrorCode = Extract<WsEventType, 'tunnel_lost'>
 
 export interface SimulationStatus {
@@ -250,7 +216,7 @@ export function useSimWsDispatcher(
           const d = parsePositionUpdate(wsMessage.data)
           if (!d) break
           // Only include a key when the incoming payload carries it,
-          // so a tick without `eta` doesn't wipe the cached value.
+          // so a tick without `eta_seconds` doesn't wipe the cached value.
           const patch: Partial<DeviceRuntime> = {}
           if (d.lat != null && d.lng != null) {
             patch.currentPos = { lat: d.lat, lng: d.lng }
@@ -259,8 +225,7 @@ export function useSimWsDispatcher(
             s.setBackendPositionSynced(true)
           }
           if (d.progress != null) patch.progress = d.progress
-          const etaVal = d.eta_seconds ?? d.eta
-          if (etaVal != null) patch.eta = etaVal
+          if (d.eta_seconds != null) patch.eta = d.eta_seconds
           if (d.distance_remaining != null) patch.distanceRemaining = d.distance_remaining
           if (d.distance_traveled != null) patch.distanceTraveled = d.distance_traveled
           if (d.speed_mps != null) patch.currentSpeedKmh = d.speed_mps * 3.6

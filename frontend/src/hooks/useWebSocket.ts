@@ -1,8 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { WS_BASE } from '../lib/constants'
+import type { WsEventType } from '../generated/api-contract'
 
 export interface WsMessage {
-  type: string
+  // Typed as the codegen'd event-name union so a `case`/`===` against a
+  // name the backend doesn't emit (typo, backend rename) fails `tsc`.
+  // The frame is not validated at runtime; unknown names simply match
+  // no handler.
+  type: WsEventType
   // Intentionally `unknown` — callers must narrow the payload via
   // a type-guard or equivalent check before reading fields. The server
   // emits ~24 event types (see backend/api/websocket.py); there is no

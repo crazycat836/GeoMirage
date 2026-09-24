@@ -14,6 +14,11 @@
 import type { WsMessage } from '../useWebSocket'
 import type { DeviceInfo } from '../../types/device'
 import { asObject, asString, asStringArray } from '../../lib/ws-guards'
+import type {
+  DeviceConnectedEvent,
+  DeviceDisconnectedEvent,
+  DeviceErrorEvent,
+} from '../../generated/api-contract'
 
 // DeviceInfo lives in types/device.ts (neutral module shared with the
 // services layer); re-exported here so existing consumer imports keep working.
@@ -21,12 +26,11 @@ export type { DeviceInfo } from '../../types/device'
 
 export type WsSubscribe = (fn: (m: WsMessage) => void) => () => void
 
-export interface DeviceConnectedPayload {
-  udid: string
-  name?: string
-  ios_version?: string
-  connection_type?: string
-}
+// Payload shapes derive from the codegen'd contract so a backend field
+// rename fails tsc here. `connection_type` is widened to `string` because
+// it feeds `DeviceInfo.connection_type` and is only string-guarded.
+export type DeviceConnectedPayload =
+  Pick<DeviceConnectedEvent, 'udid' | 'name' | 'ios_version'> & { connection_type?: string }
 
 export type DeviceLostCause =
   | 'unknown'
@@ -45,17 +49,16 @@ function asDeviceLostCause(v: unknown): DeviceLostCause | undefined {
     : undefined
 }
 
-export interface DeviceDisconnectedPayload {
-  udid?: string
-  udids?: readonly string[]
-  // The backend sends its transition cause under both `reason` and
-  // `cause` (connection_state._ws_observer). Deliberate values are
-  // listed in VOLUNTARY_DISCONNECT_REASONS; everything else is a loss.
-  reason?: string
-  // Narrowed to the causes that have a dedicated toast; any other value
-  // (including the deliberate ones) parses to undefined.
-  cause?: DeviceLostCause
-}
+// The backend sends its transition cause under both `reason` and
+// `cause` (connection_state._ws_observer). Deliberate `reason` values are
+// listed in VOLUNTARY_DISCONNECT_REASONS; everything else is a loss.
+// `cause` is narrowed to the causes that have a dedicated toast; any other
+// value (including the deliberate ones) parses to undefined.
+export type DeviceDisconnectedPayload =
+  Pick<DeviceDisconnectedEvent, 'udid' | 'reason'> & {
+    udids?: readonly string[]
+    cause?: DeviceLostCause
+  }
 
 /**
  * Disconnect reasons the app or user caused on purpose: the explicit
@@ -74,12 +77,9 @@ export function isInvoluntaryDisconnect(reason: string | undefined): boolean {
   return reason == null || !VOLUNTARY_DISCONNECT_REASONS.has(reason)
 }
 
-export interface DeviceSnapshotEntry {
-  udid: string
-  name?: string
-  ios_version?: string
-  connection_type?: string
-}
+// The contract types snapshot entries as `Record<string, unknown>`; each
+// entry carries the same fields as a `device_connected` frame.
+export type DeviceSnapshotEntry = DeviceConnectedPayload
 
 export interface DeviceSnapshotPayload {
   devices: readonly DeviceSnapshotEntry[]
@@ -108,12 +108,7 @@ export function parseDeviceDisconnected(data: unknown): DeviceDisconnectedPayloa
   }
 }
 
-export interface DeviceErrorPayload {
-  udid?: string
-  stage?: string
-  error?: string
-  code?: string
-}
+export type DeviceErrorPayload = Partial<DeviceErrorEvent>
 
 export function parseDeviceError(data: unknown): DeviceErrorPayload | null {
   const obj = asObject(data)

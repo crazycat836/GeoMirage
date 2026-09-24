@@ -81,7 +81,7 @@ interface Harness {
   /** Primary runtime — what the derived single-device view projects. */
   readonly primary: DeviceRuntime | null
   setters: SimWsSetters
-  send: (type: string, data: unknown) => void
+  send: (type: WsMessage['type'], data: unknown) => void
   seedRuntimes: (map: RuntimesMap) => void
   unmount: () => void
   subscribe: WsSubscribe
@@ -144,7 +144,7 @@ function createHarness(seed?: {
     return rt
   })
 
-  const send = (type: string, data: unknown) => {
+  const send = (type: WsMessage['type'], data: unknown) => {
     act(() => { handler?.({ type, data }) })
   }
 
@@ -230,17 +230,25 @@ describe('position_update', () => {
     expect(h.setters.updateRuntime).toHaveBeenLastCalledWith(UDID_A, { currentPos: { lat: 3, lng: 4 } })
   })
 
-  it('eta_seconds takes precedence over eta', () => {
+  it('eta comes from eta_seconds (udid-less → local slot)', () => {
     const h = createHarness()
-    h.send('position_update', { udid: UDID_A, eta: 100, eta_seconds: 42 })
-    expect(h.runtimes[UDID_A].eta).toBe(42)
-  })
-
-  it('eta falls back to `eta` when eta_seconds is absent (udid-less → local slot)', () => {
-    const h = createHarness()
-    h.send('position_update', { eta: 77 })
+    h.send('position_update', { eta_seconds: 77 })
     expect(h.runtimes[LOCAL_RUNTIME_KEY].eta).toBe(77)
     expect(h.primary?.eta).toBe(77)
+  })
+
+  it('ignores a non-contract `eta` field', () => {
+    const h = createHarness()
+    h.send('position_update', { udid: UDID_A, eta: 100 })
+    expect(h.setters.updateRuntime).not.toHaveBeenCalled()
+  })
+
+  it('WsMessage.type only accepts contract event names', () => {
+    // Type-level guard (checked by tsconfig.test.json): a renamed or
+    // misspelled event name must fail tsc instead of silently never matching.
+    // @ts-expect-error 'lap_completed' is not a backend WS event
+    const bogus: WsMessage['type'] = 'lap_completed'
+    expect(bogus).toBe('lap_completed')
   })
 
   it('lat without lng is dropped — position only applies as a pair', () => {
