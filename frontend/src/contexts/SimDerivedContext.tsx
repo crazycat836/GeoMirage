@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react'
-import { useSimState } from './SimContext'
+import { useSimState, type SimStateValue } from './SimContext'
 import { pickDisplaySpeed, toLatLng } from '../lib/sim-derive'
 
 // A focused slice of sim state for read-only consumers (route cards,
@@ -15,6 +15,24 @@ export interface SimDerivedContextValue {
 }
 
 const SimDerivedContext = createContext<SimDerivedContextValue | null>(null)
+
+// The sim state the app shell needs, minus everything that changes on a
+// position tick (position, progress, ETA, runtimes). The value only changes
+// when the user switches mode, edits the route, starts / pauses / stops a
+// run, a DDI mount starts or ends, or a device's tunnel degrades or
+// recovers. AppShell and the popovers it renders read this instead of
+// `useSimState()` so a running simulation doesn't re-render the whole tree.
+export interface SimOverviewValue {
+  mode: SimStateValue['mode']
+  waypoints: SimStateValue['waypoints']
+  isRunning: boolean
+  isPaused: boolean
+  ddiMounting: SimStateValue['ddiMounting']
+  /** Udids whose tunnel is mid-reconnect (`runtime.tunnelDegraded`). */
+  tunnelDegradedUdids: readonly string[]
+}
+
+const SimOverviewContext = createContext<SimOverviewValue | null>(null)
 
 interface SimDerivedProviderProps {
   children: ReactNode
@@ -65,7 +83,41 @@ export function SimDerivedProvider({ children }: SimDerivedProviderProps) {
     [currentPos, destPos, displaySpeed, isRunning, isPaused],
   )
 
-  return <SimDerivedContext.Provider value={value}>{children}</SimDerivedContext.Provider>
+  // Keyed by a joined string so a tick that rebuilds `runtimes` without
+  // changing who is degraded keeps the same array (and overview value).
+  const degradedKey = Object.values(sim.runtimes)
+    .filter((r) => r.tunnelDegraded)
+    .map((r) => r.udid)
+    .sort()
+    .join('\n')
+  const tunnelDegradedUdids = useMemo(
+    () => (degradedKey ? degradedKey.split('\n') : []),
+    [degradedKey],
+  )
+
+  const overview = useMemo<SimOverviewValue>(
+    () => ({
+      mode: sim.mode,
+      waypoints: sim.waypoints,
+      isRunning,
+      isPaused,
+      ddiMounting: sim.ddiMounting,
+      tunnelDegradedUdids,
+    }),
+    [sim.mode, sim.waypoints, isRunning, isPaused, sim.ddiMounting, tunnelDegradedUdids],
+  )
+
+  return (
+    <SimOverviewContext.Provider value={overview}>
+      <SimDerivedContext.Provider value={value}>{children}</SimDerivedContext.Provider>
+    </SimOverviewContext.Provider>
+  )
+}
+
+export function useSimOverview(): SimOverviewValue {
+  const ctx = useContext(SimOverviewContext)
+  if (!ctx) throw new Error('useSimOverview must be used inside SimDerivedProvider')
+  return ctx
 }
 
 export function useSimDerived(): SimDerivedContextValue {

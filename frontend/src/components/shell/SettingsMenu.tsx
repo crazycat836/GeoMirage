@@ -8,7 +8,8 @@ import { readLS, writeLS } from '../../lib/local-storage'
 import { getWifiKeepalive, setWifiKeepalive } from '../../services/api'
 import { devWarn } from '../../lib/dev-log'
 import { formatCountdown } from '../../lib/format'
-import { useSimActions, useSimState } from '../../contexts/SimContext'
+import { useSimActions } from '../../contexts/SimContext'
+import { useSimOverview } from '../../contexts/SimDerivedContext'
 import { useSimSettings } from '../../contexts/SimSettingsContext'
 import { useDeviceContext } from '../../contexts/DeviceContext'
 import { useAvatarContext } from '../../contexts/AvatarContext'
@@ -67,7 +68,9 @@ export default function SettingsMenu({ open, onClose, layerKey, onLayerChange }:
   const { showToast } = useToastContext()
   const { lang, setLang } = useI18n()
   const { handleRestore, handleOpenLog } = useSimActions()
-  const { runtimes } = useSimState()
+  // Overview, not useSimState: the degraded set is all this menu needs, and
+  // it must not re-render on every position tick.
+  const { tunnelDegradedUdids } = useSimOverview()
   const { cooldown, cooldownEnabled, handleToggleCooldown } = useSimSettings()
   const device = useDeviceContext()
 
@@ -123,7 +126,7 @@ export default function SettingsMenu({ open, onClose, layerKey, onLayerChange }:
   // already excluded by the upstream `is_connected` filter on
   // `connectedDevices`.
   const dualDevice =
-    device.connectedDevices.filter((d) => !runtimes[d.udid]?.tunnelDegraded).length >= 2
+    device.connectedDevices.filter((d) => !tunnelDegradedUdids.includes(d.udid)).length >= 2
 
   // Outside-click dismissal — kept inline (rather than `useOutsideClick`)
   // because the predicate has trigger and avatar-picker exemptions that

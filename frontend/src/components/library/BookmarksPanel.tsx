@@ -6,6 +6,7 @@ import {
 import { useBookmarkContext } from '../../contexts/BookmarkContext'
 import { LIBRARY_CHIPS_VISIBLE_CAP } from '../../lib/constants'
 import { useToastContext } from '../../contexts/ToastContext'
+import { useSimDerived } from '../../contexts/SimDerivedContext'
 import type { Bookmark, BookmarkPlace, BookmarkTag } from '../../hooks/useBookmarks'
 import { useT } from '../../i18n'
 import { ICON_SIZE } from '../../lib/icons'
@@ -35,7 +36,6 @@ import BookmarkRow from './BookmarkRow'
 
 interface BookmarksPanelProps {
   onBookmarkClick: (lat: number, lng: number) => void
-  currentPosition: { lat: number; lng: number } | null
 }
 
 const ALL_ID = '__all__' as const
@@ -49,8 +49,11 @@ const COPIED_FLASH_MS = 1200
 
 const getBookmarkId = (b: Bookmark) => b.id
 
-export default function BookmarksPanel({ onBookmarkClick, currentPosition }: BookmarksPanelProps) {
+export default function BookmarksPanel({ onBookmarkClick }: BookmarksPanelProps) {
   const t = useT()
+  // Subscribed here rather than passed down from LibraryDrawer so a
+  // position tick re-renders this panel only, not the drawer around it.
+  const { currentPos: currentPosition } = useSimDerived()
   const bm = useBookmarkContext()
   const { showToast } = useToastContext()
   const { bookmarks, places, tags, loading } = bm

@@ -17,7 +17,7 @@ import { DeviceProvider, useDeviceContext } from './contexts/DeviceContext'
 import { ConnectionHealthProvider } from './contexts/ConnectionHealthContext'
 import { SimProvider, useSimActions, useSimState, SPEED_MAP } from './contexts/SimContext'
 import { SimSettingsProvider, useSimSettings } from './contexts/SimSettingsContext'
-import { SimDerivedProvider, useSimDerived } from './contexts/SimDerivedContext'
+import { SimDerivedProvider, useSimDerived, useSimOverview } from './contexts/SimDerivedContext'
 import { BookmarkProvider, useBookmarkContext } from './contexts/BookmarkContext'
 import { RouteLibraryProvider } from './contexts/RouteLibraryContext'
 import { AvatarProvider } from './contexts/AvatarContext'
@@ -138,33 +138,34 @@ function resolveSpeedKmh(
   return SPEED_MAP[moveMode as keyof typeof SPEED_MAP] ?? 5
 }
 
-// Inner shell — consumes all contexts
-function AppShell() {
-  const t = useT()
+// Map layer — everything that has to follow the position stream (map
+// props, planned-route ETA preview, the ETA bar, the add-bookmark dialog's
+// "use current position"). Split out of AppShell so a position tick only
+// re-renders this subtree, not the whole shell and its popovers.
+interface SimMapLayerProps {
+  layerKey: string
+  pcPosition: { lat: number; lng: number } | null
+  onMapReady: (map: L.Map | null) => void
+  onTeleportNow: (lat: number, lng: number) => void
+  onOpenDevices: () => void
+  onSaveRoute: () => void
+}
+
+function SimMapLayer({
+  layerKey,
+  pcPosition,
+  onMapReady,
+  onTeleportNow,
+  onOpenDevices,
+  onSaveRoute,
+}: SimMapLayerProps) {
   const toast = useToastContext()
-  const { showToast } = toast
-  const device = useDeviceContext()
-  // Actions are referentially stable for the app's lifetime; `sim` is
-  // the ticking state slice (AppShell renders MapView / EtaBar, so it
-  // legitimately re-renders at position-stream rate).
   const simActions = useSimActions()
   const sim = useSimState()
   const { currentPos: simCurrentPos, destPos: simDestPos } = useSimDerived()
   const simSettings = useSimSettings()
   const bm = useBookmarkContext()
   const health = useConnectionHealth()
-  const { handlePause, handleResume, setMode, clearDdiMounting } = simActions
-
-  // Mode switching out of the Route family discards the staged waypoints
-  // (see useSimulation.setMode). Warn with a toast when that throws away a
-  // non-empty route so the loss is never silent. Switching *within* the Route
-  // family (Loop / MultiStop / Random) preserves the chain — no warning there.
-  const handleModeChange = useCallback((next: SimMode) => {
-    if (isRouteSubMode(sim.mode) && !isRouteSubMode(next) && sim.waypoints.length > 0) {
-      toast.showToast(t('toast.route_cleared'))
-    }
-    setMode(next)
-  }, [sim.mode, sim.waypoints.length, setMode, toast, t])
 
   const mapWaypoints = useMemo(
     () => sim.waypoints.map((w: LatLng, i: number) => ({ ...w, index: i })),
@@ -201,6 +202,100 @@ function AppShell() {
     return ms > 0 ? plannedDistanceM / ms : 0
   }, [plannedDistanceM, sim.customSpeedKmh, sim.speedMinKmh, sim.speedMaxKmh, sim.moveMode])
 
+  return (
+    <>
+      <MapView
+        currentPosition={simCurrentPos}
+        currentPositionUnsynced={!!simCurrentPos && !sim.backendPositionSynced}
+        destination={simDestPos}
+        waypoints={mapWaypoints}
+        routePath={sim.routePath}
+        flowerRadiusM={sim.mode === SimMode.Flower ? simSettings.flowerSettings.radiusM : null}
+        randomWalkRadius={
+          sim.mode === SimMode.RandomWalk ? simSettings.randomWalkRadius :
+          (sim.mode === SimMode.Loop || sim.mode === SimMode.MultiStop) ? simSettings.wpGenRadius :
+          null
+        }
+        onMapClick={simActions.handleMapClick}
+        onTeleport={onTeleportNow}
+        onNavigate={simActions.handleNavigate}
+        onAddBookmark={bm.handleAddBookmark}
+        onAddWaypoint={simActions.handleAddWaypoint}
+        showWaypointOption={sim.mode === SimMode.Loop || sim.mode === SimMode.MultiStop || sim.mode === SimMode.Flower}
+        onSaveRoute={onSaveRoute}
+        showSaveRouteOption={sim.waypoints.length > 0}
+        deviceConnected={health.canOperate}
+        onOpenDevices={onOpenDevices}
+        onShowToast={toast.showToast}
+        layerKey={layerKey}
+        onMapReady={onMapReady}
+        pcPosition={pcPosition}
+      />
+
+      {/* Add bookmark dialog (full form with place, tags, note) */}
+      <BookmarkEditDialog
+        open={!!bm.addBmDialog}
+        mode="create"
+        initialCoordinates={bm.addBmDialog ?? undefined}
+        currentPosition={simCurrentPos}
+        places={bm.places}
+        tags={bm.tags}
+        onClose={() => bm.setAddBmDialog(null)}
+        onSubmit={(values: BookmarkEditValues) => bm.submitAddBookmark({
+          name: values.name,
+          lat: values.lat,
+          lng: values.lng,
+          place_id: values.placeId,
+          tags: values.tagIds,
+          note: values.note,
+        })}
+      />
+
+      {/* The bottom-left device chip was removed in the design-handoff
+          phase 3: device info lives in the top-right status pair
+          (MiniStatusBar) and the DeviceDrawer trigger lives in the
+          TopBar's right action cluster. */}
+
+      <EtaBar
+        runtimes={sim.runtimes}
+        state={sim.status?.state ?? 'idle'}
+        progress={sim.progress}
+        remainingDistance={sim.status?.distance_remaining ?? 0}
+        traveledDistance={sim.status?.distance_traveled ?? 0}
+        eta={sim.eta ?? 0}
+        plannedDistanceM={plannedDistanceM}
+        plannedEtaSeconds={plannedEtaSeconds}
+      />
+    </>
+  )
+}
+
+// Inner shell — layout, popover state, keyboard shortcuts, device/DDI
+// toasts. Reads only `useSimOverview()` from the sim, so position ticks
+// don't re-render it (or the menus / drawers it renders); the ticking
+// parts live in SimMapLayer.
+function AppShell() {
+  const t = useT()
+  const toast = useToastContext()
+  const { showToast } = toast
+  const device = useDeviceContext()
+  // Actions are referentially stable for the app's lifetime.
+  const simActions = useSimActions()
+  const sim = useSimOverview()
+  const health = useConnectionHealth()
+  const { handlePause, handleResume, setMode, clearDdiMounting } = simActions
+
+  // Mode switching out of the Route family discards the staged waypoints
+  // (see useSimulation.setMode). Warn with a toast when that throws away a
+  // non-empty route so the loss is never silent. Switching *within* the Route
+  // family (Loop / MultiStop / Random) preserves the chain — no warning there.
+  const handleModeChange = useCallback((next: SimMode) => {
+    if (isRouteSubMode(sim.mode) && !isRouteSubMode(next) && sim.waypoints.length > 0) {
+      toast.showToast(t('toast.route_cleared'))
+    }
+    setMode(next)
+  }, [sim.mode, sim.waypoints.length, setMode, toast, t])
+
   // Search box: in Teleport mode it stages a pending destination (the
   // panel then shows a Go button) instead of teleporting immediately.
   // Other modes keep instant teleport.
@@ -227,6 +322,7 @@ function AppShell() {
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [saveRouteOpen, setSaveRouteOpen] = useState(false)
+  const openSaveRoute = useCallback(() => setSaveRouteOpen(true), [])
 
   // Open the devices popover from places that don't own the trigger button
   // (the device-lost banner, the map context-menu "no device" row). Anchors
@@ -358,9 +454,9 @@ function AppShell() {
         handleModeChange(next === SimMode.Loop && sim.mode === SimMode.Flower ? SimMode.Flower : next)
         return
       }
-      if (!isInput && e.key === ' ' && sim.status.running) {
+      if (!isInput && e.key === ' ' && sim.isRunning) {
         e.preventDefault()
-        if (sim.status.paused) handleResume()
+        if (sim.isPaused) handleResume()
         else handlePause()
       }
     }
@@ -368,7 +464,7 @@ function AppShell() {
     return () => window.removeEventListener('keydown', handler)
     // Deps are stable actions + the two run-state booleans — the listener
     // re-subscribes when the run/pause state flips, not on position ticks.
-  }, [libraryOpen, handleModeChange, sim.mode, sim.status.running, sim.status.paused, handlePause, handleResume])
+  }, [libraryOpen, handleModeChange, sim.mode, sim.isRunning, sim.isPaused, handlePause, handleResume])
 
   return (
     <div className="relative w-screen h-screen overflow-hidden">
@@ -392,67 +488,13 @@ function AppShell() {
           />
         )}
 
-        <MapView
-          currentPosition={simCurrentPos}
-          currentPositionUnsynced={!!simCurrentPos && !sim.backendPositionSynced}
-          destination={simDestPos}
-          waypoints={mapWaypoints}
-          routePath={sim.routePath}
-          flowerRadiusM={sim.mode === SimMode.Flower ? simSettings.flowerSettings.radiusM : null}
-          randomWalkRadius={
-            sim.mode === SimMode.RandomWalk ? simSettings.randomWalkRadius :
-            (sim.mode === SimMode.Loop || sim.mode === SimMode.MultiStop) ? simSettings.wpGenRadius :
-            null
-          }
-          onMapClick={simActions.handleMapClick}
-          onTeleport={handleTeleportNow}
-          onNavigate={simActions.handleNavigate}
-          onAddBookmark={bm.handleAddBookmark}
-          onAddWaypoint={simActions.handleAddWaypoint}
-          showWaypointOption={sim.mode === SimMode.Loop || sim.mode === SimMode.MultiStop || sim.mode === SimMode.Flower}
-          onSaveRoute={() => setSaveRouteOpen(true)}
-          showSaveRouteOption={sim.waypoints.length > 0}
-          deviceConnected={health.canOperate}
-          onOpenDevices={openDevicesPanel}
-          onShowToast={toast.showToast}
+        <SimMapLayer
           layerKey={layerKey}
-          onMapReady={handleMapReady}
           pcPosition={pcMarkerCoord}
-        />
-
-        {/* Add bookmark dialog (full form with place, tags, note) */}
-        <BookmarkEditDialog
-          open={!!bm.addBmDialog}
-          mode="create"
-          initialCoordinates={bm.addBmDialog ?? undefined}
-          currentPosition={simCurrentPos}
-          places={bm.places}
-          tags={bm.tags}
-          onClose={() => bm.setAddBmDialog(null)}
-          onSubmit={(values: BookmarkEditValues) => bm.submitAddBookmark({
-            name: values.name,
-            lat: values.lat,
-            lng: values.lng,
-            place_id: values.placeId,
-            tags: values.tagIds,
-            note: values.note,
-          })}
-        />
-
-        {/* The bottom-left device chip was removed in the design-handoff
-            phase 3: device info lives in the top-right status pair
-            (MiniStatusBar) and the DeviceDrawer trigger lives in the
-            TopBar's right action cluster. */}
-
-        <EtaBar
-          runtimes={sim.runtimes}
-          state={sim.status?.state ?? 'idle'}
-          progress={sim.progress}
-          remainingDistance={sim.status?.distance_remaining ?? 0}
-          traveledDistance={sim.status?.distance_traveled ?? 0}
-          eta={sim.eta ?? 0}
-          plannedDistanceM={plannedDistanceM}
-          plannedEtaSeconds={plannedEtaSeconds}
+          onMapReady={handleMapReady}
+          onTeleportNow={handleTeleportNow}
+          onOpenDevices={openDevicesPanel}
+          onSaveRoute={openSaveRoute}
         />
         <UpdateChecker />
       </div>
