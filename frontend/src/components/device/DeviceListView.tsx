@@ -167,6 +167,9 @@ export default function DeviceListView({ onClose, onManage, onAdd }: DeviceListV
                 disabled={unsupported || isConnecting}
                 onClick={() => {
                   if (unsupported) return
+                  // Already connected: nothing to connect. Re-connecting
+                  // rebuilt the engine and aborted a running route.
+                  if (d.is_connected) { onClose(); return }
                   void handleConnect(d.udid)
                 }}
                 className={[

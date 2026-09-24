@@ -75,6 +75,10 @@ async def connect_device(udid: str):
     # Max MAX_DEVICES devices (group mode). Allow re-connect of an already-connected udid.
     if not dm.is_connected(udid) and dm.connected_count >= MAX_DEVICES:
         raise max_devices_error()
+    # Already connected with a live engine: nothing to do. Rebuilding the
+    # engine would stop it and abort whatever run is in progress.
+    if dm.is_connected(udid) and app_state.simulation_engines.get(udid) is not None:
+        return {"status": "already_connected", "udid": udid}
     try:
         # `connect_device` runs ``dm.connect`` and broadcasts
         # ``device_connected`` via the installed WS observer. The engine

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, cleanup, screen } from '@testing-library/react'
+import { render, cleanup, screen, fireEvent } from '@testing-library/react'
 import type { DeviceInfo } from '../../types/device'
 
 const state = vi.hoisted(() => ({
@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   lostUdids: new Set<string>(),
   everConnectedUdids: new Set<string>(),
   runtimes: {} as Record<string, { tunnelDegraded?: boolean }>,
+  connect: vi.fn(async () => null),
 }))
 
 vi.mock('../../contexts/DeviceContext', () => ({
@@ -22,7 +23,7 @@ vi.mock('../../contexts/DeviceContext', () => ({
       lostUdids: state.lostUdids,
       everConnectedUdids: state.everConnectedUdids,
       scan: vi.fn(),
-      connect: vi.fn(),
+      connect: state.connect,
     }
   },
 }))
@@ -53,6 +54,7 @@ afterEach(() => {
   state.lostUdids = new Set()
   state.everConnectedUdids = new Set()
   state.runtimes = {}
+  state.connect.mockClear()
 })
 
 describe('DeviceListView status', () => {
@@ -84,5 +86,24 @@ describe('DeviceListView status', () => {
     expect(statusOf('Phone A')).toBe('connected')
     expect(statusOf('Phone B')).toBe('reconnecting')
     expect(screen.getByText('device.chip_state_reconnecting')).toBeTruthy()
+  })
+})
+
+describe('DeviceListView row click', () => {
+  it('closes the popover without reconnecting an already-connected device', () => {
+    // Reconnecting rebuilt the simulation engine and aborted a running route.
+    state.devices = [dev('a', 'Phone A', true)]
+    const onClose = vi.fn()
+    render(<DeviceListView onClose={onClose} onManage={vi.fn()} onAdd={vi.fn()} />)
+    fireEvent.click(screen.getByText('Phone A').closest('button')!)
+    expect(state.connect).not.toHaveBeenCalled()
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('connects a device that is not connected', () => {
+    state.devices = [dev('a', 'Phone A', false)]
+    render(<DeviceListView onClose={vi.fn()} onManage={vi.fn()} onAdd={vi.fn()} />)
+    fireEvent.click(screen.getByText('Phone A').closest('button')!)
+    expect(state.connect).toHaveBeenCalledWith('a')
   })
 })
