@@ -29,6 +29,14 @@ _BROADCAST_PER_CLIENT_TIMEOUT_S = 1.0
 # when a client times out / errors mid-send.
 _connections: list[WebSocket] = []
 
+# Close code for a client dropped mid-broadcast. 1011 ("internal error")
+# makes the renderer's onclose fire so its reconnect loop takes over.
+_DROPPED_CLIENT_CLOSE_CODE = 1011
+
+# Strong refs to in-flight close tasks so they aren't garbage-collected
+# before they finish (asyncio only keeps weak refs to tasks).
+_close_tasks: set[asyncio.Task] = set()
+
 
 def register(ws: WebSocket) -> None:
     """Add a freshly-authed socket to the broadcast set."""
@@ -52,7 +60,10 @@ async def broadcast(event_type: str, data: dict) -> None:
 
     Sends fan out in parallel with a per-client timeout so a single slow /
     stuck client cannot stall every other broadcast that follows. Failing
-    clients (timeout, exception) are removed from the connection list.
+    clients (timeout, exception) are removed from the connection list and
+    their socket is closed, so the renderer sees ``onclose`` and
+    reconnects instead of sitting on an open socket that never receives
+    another event.
     """
     message = json.dumps({"type": event_type, "data": data})
 
@@ -74,3 +85,29 @@ async def broadcast(event_type: str, data: dict) -> None:
     for ws in results:
         if ws is not None and ws in _connections:
             _connections.remove(ws)
+            logger.warning(
+                "Dropping WebSocket client after failed %s broadcast; "
+                "closing so it reconnects (%d remaining)",
+                event_type, len(_connections),
+            )
+            # Close in the background: a wedged socket's close handshake
+            # must not hold up this broadcast or the ones behind it.
+            task = asyncio.create_task(_close_dropped(ws))
+            _close_tasks.add(task)
+            task.add_done_callback(_close_tasks.discard)
+
+
+async def _close_dropped(ws: WebSocket) -> None:
+    try:
+        await asyncio.wait_for(
+            ws.close(code=_DROPPED_CLIENT_CLOSE_CODE),
+            timeout=_BROADCAST_PER_CLIENT_TIMEOUT_S,
+        )
+    except Exception:
+        logger.debug("Closing dropped WebSocket client failed", exc_info=True)
+
+
+async def drain_close_tasks_for_tests() -> None:
+    """Await every pending close task. Test helper only."""
+    if _close_tasks:
+        await asyncio.gather(*list(_close_tasks), return_exceptions=True)
