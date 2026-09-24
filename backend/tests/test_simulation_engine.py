@@ -791,3 +791,105 @@ def test_multi_stop_loop_walks_back_to_the_start_each_lap():
     preview = next(d for t, d in recorder.events if t == "route_path")
     assert preview["coords"][-1] == {"lat": wps[0].lat, "lng": wps[0].lng}
     assert engine.state == SimulationState.IDLE
+
+
+# ── Lap limits (Loop / Multi-stop) and random-walk retries ────────────────
+
+def test_start_loop_stops_after_lap_count_laps():
+    from models.schemas import MovementMode, SimulationState
+
+    async def scenario():
+        engine, _, recorder = _fast_engine()
+        wps = _triangle()
+        engine.current_position = wps[0]
+
+        # Without the lap check the loop never ends and wait_for fails.
+        await asyncio.wait_for(engine.start_loop(
+            wps, MovementMode.WALKING, lap_count=2,
+            pause_enabled=False, straight_line=True,
+        ), timeout=5.0)
+        return engine, recorder
+
+    engine, recorder = asyncio.run(scenario())
+    laps = [d for t, d in recorder.events if t == "lap_complete"]
+    assert laps == [{"lap": 1, "total": 2}, {"lap": 2, "total": 2}]
+    assert engine.state == SimulationState.IDLE
+    assert recorder.states()[-1] == "idle"
+
+
+def test_multi_stop_loop_stops_after_lap_count_laps():
+    from models.schemas import MovementMode, SimulationState
+
+    async def scenario():
+        engine, _, recorder = _fast_engine()
+        wps = _triangle()
+        engine.current_position = wps[0]
+
+        await asyncio.wait_for(engine.multi_stop(
+            wps, MovementMode.WALKING, loop=True, lap_count=2,
+            pause_enabled=False, straight_line=True,
+        ), timeout=5.0)
+        return engine, recorder
+
+    engine, recorder = asyncio.run(scenario())
+    laps = [d for t, d in recorder.events if t == "lap_complete"]
+    assert laps == [{"lap": 1, "total": 2}, {"lap": 2, "total": 2}]
+    complete = [d for t, d in recorder.events if t == "multi_stop_complete"]
+    assert complete == [{"laps": 2}]
+    assert engine.state == SimulationState.IDLE
+
+
+def test_random_walk_retries_short_routes_and_backs_off_on_connection_errors(monkeypatch):
+    import core.random_walk as rw
+    from models.schemas import Coordinate, MovementMode, SimulationState
+    from services.route_service import RouteService
+
+    monkeypatch.setattr(rw, "_SHORT_ROUTE_RETRY_S", 0.0)
+    monkeypatch.setattr(rw, "_CONN_BACKOFF_BASE_S", 0.01)
+
+    class ScriptedRouteService:
+        """short route → connection error → ok → connection error → ok."""
+
+        def __init__(self):
+            self.script = ["short", "conn", "ok", "conn", "ok"]
+            self.calls = 0
+            self._inner = RouteService()
+
+        async def get_route(self, a_lat, a_lng, b_lat, b_lng, **kwargs):
+            step = self.script[min(self.calls, len(self.script) - 1)]
+            self.calls += 1
+            if step == "short":
+                return {"coords": [[a_lat, a_lng]], "distance": 0.0}
+            if step == "conn":
+                raise ConnectionError("tunnel blip")
+            kwargs["force_straight"] = True
+            return await self._inner.get_route(a_lat, a_lng, b_lat, b_lng, **kwargs)
+
+    async def scenario():
+        engine, _, recorder = _fast_engine()
+        engine.route_service = ScriptedRouteService()
+        engine.current_position = Coordinate(lat=25.0, lng=121.5)
+
+        walk = asyncio.create_task(engine.random_walk(
+            Coordinate(lat=25.0, lng=121.5), 30.0, MovementMode.WALKING,
+            pause_enabled=False, seed=7,
+        ))
+        await _wait_for(
+            lambda: sum(t == "random_walk_arrived" for t, _ in recorder.events) >= 2,
+            timeout=3.0,
+        )
+        await engine.stop()
+        await asyncio.wait_for(walk, timeout=2.0)
+        return engine, recorder
+
+    engine, recorder = asyncio.run(scenario())
+
+    assert engine.route_service.calls >= 5
+    lost = [d for t, d in recorder.events if t == "connection_lost"]
+    # A successful leg resets the connection-error count.
+    assert [d["retry"] for d in lost][:2] == [1, 1]
+    assert all(d["next_retry_seconds"] == pytest.approx(0.01) for d in lost)
+    arrived = [d["count"] for t, d in recorder.events if t == "random_walk_arrived"]
+    # The short-route retry and connection errors don't count as arrivals.
+    assert arrived[:2] == [1, 2]
+    assert engine.state == SimulationState.IDLE
