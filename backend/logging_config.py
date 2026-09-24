@@ -160,6 +160,19 @@ UVICORN_LOG_CONFIG: dict = {
 }
 
 
+_QUIET_HTTP_LOGGERS = ("httpx", "httpcore")
+
+
+def _restrict_rotated_logs(log_dir: Path) -> None:
+    """Tighten ``backend.log.N`` left at 0644 by older versions to 0600."""
+    for path in log_dir.glob("backend.log.*"):
+        try:
+            if not path.is_symlink():
+                path.chmod(0o600)
+        except OSError:
+            pass
+
+
 def setup_logging(log_dir: Path) -> logging.Logger:
     """Configure root logging + uvicorn loggers and return the project logger.
 
@@ -190,6 +203,13 @@ def setup_logging(log_dir: Path) -> logging.Logger:
 
     logging.basicConfig(level=logging.INFO, handlers=handlers, force=True)
     logging.getLogger("uvicorn.access").addFilter(_AccessNoiseFilter())
+    # httpx logs every request URL at INFO; reverse-geocode and routing
+    # URLs carry the exact simulated coordinates, which must not end up
+    # in backend.log. Failures still surface at WARNING and above.
+    for name in _QUIET_HTTP_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
+    if file_error is None:
+        _restrict_rotated_logs(log_dir)
 
     project_logger = logging.getLogger("geomirage")
     if file_error is not None:

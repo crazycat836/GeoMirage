@@ -70,3 +70,28 @@ def test_symlinked_log_file_is_not_followed(tmp_path: Path, caplog) -> None:
 
     assert victim.read_text(encoding="utf-8") == "keep"
     assert _file_handlers() == []
+
+
+def test_httpx_request_urls_are_not_logged(tmp_path: Path) -> None:
+    """httpx logs every request URL at INFO, including reverse-geocode
+    queries with the exact lat/lon."""
+    logging_config.setup_logging(tmp_path / "logs")
+    logging.getLogger("httpx").info(
+        "HTTP Request: GET https://nominatim.openstreetmap.org/reverse?lat=25.0323&lon=121.5222",
+    )
+    logging.getLogger("httpcore.http11").info("send_request_headers lat=25.0323")
+
+    text = (tmp_path / "logs" / "backend.log").read_text(encoding="utf-8")
+    assert "lat=" not in text
+
+
+def test_existing_rotated_logs_are_made_private(tmp_path: Path) -> None:
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    old = log_dir / "backend.log.1"
+    old.write_text("old run\n", encoding="utf-8")
+    old.chmod(0o644)
+
+    logging_config.setup_logging(log_dir)
+
+    assert (old.stat().st_mode & 0o777) == 0o600
