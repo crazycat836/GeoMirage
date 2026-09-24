@@ -6,6 +6,7 @@ const fs = require('fs')
 const { spawn } = require('child_process')
 const { buildElevatedBackendCommand, buildElevatedBackendScript } = require('./backend-command')
 const { DEV_SERVER_URL, isAppUrl, isExternalHttps } = require('./navigation')
+const { pickUiLang, adminPrompt } = require('./locale')
 
 // Single source of truth for the app version — same file Electron already
 // consumes for `app.getVersion()` / auto-updater metadata.
@@ -107,6 +108,16 @@ function resolveBackendExe() {
 // and hand their ownership back, same as a `sudo python3 start.py` run.
 let elevatedBackendStarted = false
 
+// UI language from the OS preferred-language list (any Chinese entry → zh).
+// Shared by the renderer (additionalArguments) and the password prompt.
+// Called after `ready`, when the language list is available.
+function systemUiLang() {
+  const list = typeof app.getPreferredSystemLanguages === 'function'
+    ? app.getPreferredSystemLanguages()
+    : [app.getLocale()]
+  return pickUiLang(list)
+}
+
 function startBackendElevated(exe) {
   const { uid, gid } = os.userInfo()
   const command = buildElevatedBackendCommand({
@@ -117,10 +128,7 @@ function startBackendElevated(exe) {
     parentPid: process.pid,
     version: APP_VERSION,
   })
-  const script = buildElevatedBackendScript(
-    command,
-    'GeoMirage 需要管理員權限才能連線 iOS 17 以上的裝置。',
-  )
+  const script = buildElevatedBackendScript(command, adminPrompt(systemUiLang()))
   console.log('[electron] starting backend with administrator rights:', exe)
   elevatedBackendStarted = true
   setBackendPhase('awaiting_auth')
@@ -232,13 +240,14 @@ async function createWindow() {
       // (declared in index.html) is the layered defence on top.
       webSecurity: true,
       preload: path.join(__dirname, 'preload.js'),
-      // Only the version is forwarded via argv — it's non-sensitive and
-      // lets preload expose `version` synchronously without an IPC round
-      // trip. The session token is delivered via the
+      // Only the version and UI language are forwarded via argv — both
+      // non-sensitive — so preload can expose them synchronously without
+      // an IPC round trip. The session token is delivered via the
       // `session:get-token` IPC handshake instead (see ipcMain.handle
       // above) to keep it out of `process.argv`.
       additionalArguments: [
         `--gps-version=${APP_VERSION}`,
+        `--gps-lang=${systemUiLang()}`,
       ],
     },
   })

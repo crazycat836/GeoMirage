@@ -15,6 +15,7 @@ import {
 } from '../lib/constants'
 import { devWarn } from '../lib/dev-log'
 import { STRINGS } from '../i18n/strings'
+import { detectSystemLang } from '../i18n/detectLang'
 
 /** Envelope used by most action endpoints (connect, teleport, etc.). */
 export interface StatusResponse {
@@ -96,7 +97,7 @@ function currentLang(): 'zh' | 'en' {
       devWarn('[http.currentLang] localStorage unavailable, falling back to navigator.language', e)
     }
   }
-  return (typeof navigator !== 'undefined' && navigator.language?.toLowerCase().startsWith('zh')) ? 'zh' : 'en'
+  return detectSystemLang()
 }
 
 /** Structured error returned in the response envelope. */

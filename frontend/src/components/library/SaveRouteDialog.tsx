@@ -137,7 +137,7 @@ export default function SaveRouteDialog({ open, onClose }: SaveRouteDialogProps)
               className="seg-input w-full"
               value={categoryId}
               onChange={(e) => setCategoryId(e.target.value)}
-              aria-label={t('panel.route_category_manage')}
+              aria-label={t('route.category_label')}
             >
               {routeLib.routeCategories.map((cat) => (
                 <option key={cat.id} value={cat.id}>{cat.name}</option>

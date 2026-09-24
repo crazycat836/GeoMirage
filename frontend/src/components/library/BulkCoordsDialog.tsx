@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useT } from '../../i18n'
 import { useBookmarkContext } from '../../contexts/BookmarkContext'
 import { parseBulkCoords, type ParsedCoord } from '../../lib/parseBulkCoords'
+import { displayPlaceName } from '../../lib/bookmarks'
 import Modal from '../Modal'
 
 export type BulkMode = 'bookmarks' | 'waypoints'
@@ -148,7 +149,9 @@ export default function BulkCoordsDialog({ open, mode, onCancel, onConfirm }: Bu
               <li key={`${err.line}-${err.reason}`}>
                 <span className="text-[var(--color-error-text)]">L{err.line}</span>
                 {' · '}
-                <span className="text-[var(--color-text-3)]">[{err.reason}]</span>
+                <span className="text-[var(--color-text-3)]">
+                  {err.reason === 'range' ? t('bulk.err_range') : t('bulk.err_format')}
+                </span>
                 {' · '}
                 <span className="truncate">{err.raw}</span>
               </li>
@@ -178,7 +181,7 @@ export default function BulkCoordsDialog({ open, mode, onCancel, onConfirm }: Bu
               }}
             >
               {places.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
+                <option key={p.id} value={p.id}>{displayPlaceName(p.name, t)}</option>
               ))}
             </select>
           </label>

@@ -17,6 +17,7 @@ import SearchField from '../ui/SearchField'
 import ChipFilterBar, { type Chip } from '../ui/ChipFilterBar'
 import RouteCategoryManagerDialog from './RouteCategoryManagerDialog'
 import RouteOverwriteDialog from './RouteOverwriteDialog'
+import ReorderModeBanner from './ReorderModeBanner'
 import InlineRenameInput, { INLINE_RENAME_HEIGHT_PX } from '../ui/InlineRenameInput'
 import SortableHandleRow from '../ui/SortableHandleRow'
 import ReorderableList from '../ui/ReorderableList'
@@ -272,7 +273,7 @@ export default function RoutesPanel({ onRouteLoaded }: RoutesPanelProps) {
     },
     {
       id: 'reorder',
-      label: reorderMode ? t('generic.cancel') : t('panel.route_reorder_mode'),
+      label: reorderMode ? t('generic.done') : t('panel.route_reorder_mode'),
       icon: <GripVertical width={ICON_SIZE.sm} height={ICON_SIZE.sm} />,
       onSelect: () => { reorderMode ? exitReorderMode() : enterReorderMode() },
     },
@@ -340,7 +341,7 @@ export default function RoutesPanel({ onRouteLoaded }: RoutesPanelProps) {
             className="seg-input text-xs"
             value={saveCategoryId}
             onChange={(e) => setSaveCategoryId(e.target.value)}
-            aria-label={t('panel.route_category_manage')}
+            aria-label={t('route.category_label')}
           >
             {routeCategories.map((cat) => (
               <option key={cat.id} value={cat.id}>{cat.name}</option>
@@ -397,8 +398,8 @@ export default function RoutesPanel({ onRouteLoaded }: RoutesPanelProps) {
           activeId={activeCategoryId}
           onChange={setActiveCategoryId}
           visibleCap={LIBRARY_CHIPS_VISIBLE_CAP}
-          ariaLabel={t('panel.route_category_manage')}
-          moreLabel={t('generic.confirm')}
+          ariaLabel={t('route.category_label')}
+          moreLabel={t('generic.more')}
         />
       )}
 
@@ -406,7 +407,7 @@ export default function RoutesPanel({ onRouteLoaded }: RoutesPanelProps) {
       {selectionMode && (
         <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-[var(--color-surface-2)]">
           <span className="text-[11px] flex-1">
-            {selectedIds.size} {t('panel.route_multi_select')}
+            {t('route.selected_count', { n: selectedIds.size })}
           </span>
           {routeCategories.length > 1 && (
             <select
@@ -445,6 +446,8 @@ export default function RoutesPanel({ onRouteLoaded }: RoutesPanelProps) {
           </button>
         </div>
       )}
+
+      {reorderMode && <ReorderModeBanner onDone={exitReorderMode} />}
 
       {/* Route list */}
       {routeLib.routesLoading ? (

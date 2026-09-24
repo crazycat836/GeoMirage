@@ -456,14 +456,14 @@ interface ChoiceRowProps {
   label: React.ReactNode
   value: React.ReactNode
   items: KebabMenuItem[]
-  ariaLabel?: string
+  ariaLabel: string
 }
 
 function ChoiceRow({ icon, label, value, items, ariaLabel }: ChoiceRowProps) {
   return (
     <KebabMenu
       items={items}
-      ariaLabel={ariaLabel ?? (typeof label === 'string' ? label : undefined)}
+      ariaLabel={ariaLabel}
       align="end"
       trigger={
         <button

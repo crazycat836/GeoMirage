@@ -70,7 +70,7 @@ export default function WaypointList({
               <StopRow
                 pt={start}
                 isStart
-                label="Start"
+                label={t('panel.waypoint_start')}
                 onBookmark={onBookmark}
                 t={t}
               />
@@ -87,7 +87,7 @@ export default function WaypointList({
                     <SortableStopRow
                       key={pt.id}
                       pt={pt}
-                      label={stopLabel(points, j + 1)}
+                      label={stopLabel(points, j + 1, t)}
                       onRemove={onRemove}
                       reorderAria={t('chain.reorder_aria')}
                       t={t}
@@ -99,7 +99,7 @@ export default function WaypointList({
                 <StopRow
                   key={pt.id}
                   pt={pt}
-                  label={stopLabel(points, j + 1)}
+                  label={stopLabel(points, j + 1, t)}
                   onRemove={onRemove}
                   t={t}
                 />
@@ -280,11 +280,13 @@ function SortableStopRow({ pt, label, onRemove, reorderAria, t }: SortableStopRo
 
 // ── Labels / formatting ───────────────────────────────────────────────
 
-function stopLabel(points: readonly ChainPoint[], idx: number): string {
+function stopLabel(points: readonly ChainPoint[], idx: number, t: ReturnType<typeof useT>): string {
   const cur = points[idx]
   const nextPt = idx < points.length - 1 ? points[idx + 1] : null
   const distM = nextPt?.position && cur?.position
     ? haversineM(cur.position, nextPt.position)
     : null
-  return distM != null ? `Stop ${idx} · ${formatDistanceM(distM, 1)} next` : `Stop ${idx}`
+  return distM != null
+    ? t('chain.stop_n_next', { n: idx, dist: formatDistanceM(distM, 1) })
+    : t('chain.stop_n', { n: idx })
 }

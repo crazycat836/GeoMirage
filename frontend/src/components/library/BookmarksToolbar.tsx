@@ -87,6 +87,7 @@ export default function BookmarksToolbar(props: BookmarksToolbarProps) {
           activeId={activePlaceId}
           onChange={onActivePlaceChange}
           ariaLabel={t('bm.place_filter_aria')}
+          moreLabel={t('generic.more')}
           visibleCap={placeChipsVisibleCap}
         />
       )}
@@ -164,8 +165,8 @@ function TagFilterRow({ tags, activeTagIds, onToggleTag, onClearTags }: TagFilte
           type="button"
           onClick={onClearTags}
           className="kebab-btn"
-          aria-label={t('bm.search_clear')}
-          title={t('bm.search_clear')}
+          aria-label={t('bm.clear_tag_filter')}
+          title={t('bm.clear_tag_filter')}
           style={{ flexShrink: 0 }}
         >
           <X width={12} height={12} />

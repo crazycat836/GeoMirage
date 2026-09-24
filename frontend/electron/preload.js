@@ -31,6 +31,9 @@ function readArg(prefix) {
 
 contextBridge.exposeInMainWorld('geoMirage', {
   version: readArg('--gps-version='),
+  // 'zh' | 'en' picked by main from the OS preferred-language list (same
+  // rule as the administrator-password prompt). Non-sensitive, so argv.
+  systemLang: readArg('--gps-lang='),
   getSessionToken: () => ipcRenderer.invoke('session:get-token'),
   getBackendPhase: () => ipcRenderer.invoke('backend:get-phase'),
   onBackendPhase: (cb) => {

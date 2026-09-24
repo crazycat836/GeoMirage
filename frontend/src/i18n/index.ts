@@ -11,16 +11,17 @@ const I18nContext = createContext<I18nContextValue | null>(null);
 
 import { STORAGE_KEYS } from '../lib/storage-keys';
 import { readLS, writeLS } from '../lib/local-storage';
+import { detectSystemLang } from './detectLang';
 
 const STORAGE_KEY = STORAGE_KEYS.lang;
 
-/** Stored language, else the browser locale. Also used outside the
- *  provider (ErrorBoundary renders when the React tree is gone). */
+/** Stored language, else the system language (see detectSystemLang). Also
+ *  used outside the provider (ErrorBoundary renders when the React tree is
+ *  gone). */
 export function detectInitialLang(): Lang {
   const saved = readLS(STORAGE_KEY) as Lang | null;
   if (saved === 'zh' || saved === 'en') return saved;
-  const nav = typeof navigator !== 'undefined' ? navigator.language : 'zh';
-  return nav && nav.toLowerCase().startsWith('zh') ? 'zh' : 'en';
+  return detectSystemLang();
 }
 
 function interpolate(str: string, vars?: Record<string, string | number>): string {

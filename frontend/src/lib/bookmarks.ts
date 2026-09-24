@@ -21,6 +21,13 @@ export function isDefaultPlace(name: string): boolean {
   return DEFAULT_PLACE_NAMES.has(name)
 }
 
+/** Place name for display: the default-place sentinels are shown in the
+ *  UI language, every other name as the user typed it. */
+export function displayPlaceName(name: string, t: (key: 'bm.uncategorized' | 'bm.default') => string): string {
+  if (!isDefaultPlace(name)) return name
+  return name === 'Uncategorized' ? t('bm.uncategorized') : t('bm.default')
+}
+
 // Deterministic colour per place name. Keeps the fixed mappings that
 // predate the place/tag split so existing names stay visually stable.
 const PLACE_FIXED_COLORS: Record<string, string> = {

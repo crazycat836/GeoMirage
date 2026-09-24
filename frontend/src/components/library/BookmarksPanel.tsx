@@ -10,7 +10,7 @@ import { useSimDerived } from '../../contexts/SimDerivedContext'
 import type { Bookmark, BookmarkPlace, BookmarkTag } from '../../hooks/useBookmarks'
 import { useT } from '../../i18n'
 import { ICON_SIZE } from '../../lib/icons'
-import { isDefaultPlace } from '../../lib/bookmarks'
+import { displayPlaceName } from '../../lib/bookmarks'
 import { copyToClipboard } from '../../lib/clipboard'
 import { formatCoord } from '../../lib/format'
 import { commitTrimmedRename } from '../../lib/rename'
@@ -33,6 +33,7 @@ import BulkCoordsDialog from './BulkCoordsDialog'
 import BookmarksFooter from './BookmarksFooter'
 import BookmarksToolbar, { type SortMode } from './BookmarksToolbar'
 import BookmarkRow from './BookmarkRow'
+import ReorderModeBanner from './ReorderModeBanner'
 
 interface BookmarksPanelProps {
   onBookmarkClick: (lat: number, lng: number) => void
@@ -93,10 +94,7 @@ export default function BookmarksPanel({ onBookmarkClick }: BookmarksPanelProps)
     },
   })
 
-  const displayPlace = useCallback((name: string) => {
-    if (!isDefaultPlace(name)) return name
-    return name === 'Uncategorized' ? t('bm.uncategorized') : t('bm.default')
-  }, [t])
+  const displayPlace = useCallback((name: string) => displayPlaceName(name, t), [t])
 
   const placeMap = useMemo(() => {
     const m = new Map<string, BookmarkPlace>()
@@ -321,7 +319,7 @@ export default function BookmarksPanel({ onBookmarkClick }: BookmarksPanelProps)
     },
     {
       id: 'reorder',
-      label: reorderMode ? t('generic.cancel') : t('panel.route_reorder_mode'),
+      label: reorderMode ? t('generic.done') : t('panel.route_reorder_mode'),
       icon: <GripVertical width={ICON_SIZE.sm} height={ICON_SIZE.sm} />,
       onSelect: () => {
         if (reorderMode) exitReorderMode()
@@ -469,6 +467,8 @@ export default function BookmarksPanel({ onBookmarkClick }: BookmarksPanelProps)
         onExitSelection={exitSelection}
         headerMenuItems={headerMenuItems}
       />
+
+      {reorderMode && <ReorderModeBanner onDone={exitReorderMode} />}
 
       {bookmarks.length === 0 && loading ? (
         // `loading` flips on every refresh here, so keep the length guard.

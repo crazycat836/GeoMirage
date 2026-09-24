@@ -18,7 +18,9 @@ interface ChipFilterBarProps<Id extends string> {
       bar never wraps — default 5 works well for a 420px drawer. */
   visibleCap?: number
   ariaLabel?: string
-  moreLabel?: string
+  /** Overflow button text and aria-label — required so callers pass a
+   *  translated string (there is no English fallback). */
+  moreLabel: string
   className?: string
 }
 
@@ -31,7 +33,7 @@ export default function ChipFilterBar<Id extends string>({
   onChange,
   visibleCap = 5,
   ariaLabel,
-  moreLabel = 'More',
+  moreLabel,
   className,
 }: ChipFilterBarProps<Id>) {
   const [moreOpenSignal, setMoreOpenSignal] = useState(0)

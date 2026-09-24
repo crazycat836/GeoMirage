@@ -25,7 +25,9 @@ export interface KebabMenuItem {
 
 interface KebabMenuProps {
   items: KebabMenuItem[] | (() => KebabMenuItem[])
-  ariaLabel?: string
+  /** Trigger / menu aria-label — required so callers pass a translated
+   *  string (there is no English fallback). */
+  ariaLabel: string
   side?: Side
   align?: Align
   /** Override the default MoreVertical trigger (e.g. for row-level kebab). */
@@ -41,7 +43,7 @@ interface KebabMenuProps {
 // click-outside dismisses. Callers can swap the trigger via `trigger`.
 export default function KebabMenu({
   items,
-  ariaLabel = 'More actions',
+  ariaLabel,
   side = 'bottom',
   align = 'end',
   trigger,

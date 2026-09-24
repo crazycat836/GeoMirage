@@ -9,6 +9,7 @@ export const STRINGS = {
   'generic.sort': { zh: '排序', en: 'Sort' },
   'generic.cancel': { zh: '取消', en: 'Cancel' },
   'generic.done': { zh: '完成', en: 'Done' },
+  'generic.more': { zh: '更多', en: 'More' },
   'generic.delete': { zh: '刪除', en: 'Delete' },
   'generic.rename': { zh: '重新命名', en: 'Rename' },
   'generic.confirm': { zh: '確定', en: 'OK' },
@@ -227,6 +228,9 @@ export const STRINGS = {
   'panel.route_reorder_mode': { zh: '排序模式', en: 'Reorder mode' },
   'panel.route_category_all': { zh: '全部', en: 'All' },
   'panel.route_category_manage': { zh: '管理分類', en: 'Manage categories' },
+  'panel.reorder_banner': { zh: '排序模式：拖曳即儲存', en: 'Reorder mode: each drag is saved' },
+  'route.category_label': { zh: '路線分類', en: 'Route category' },
+  'route.selected_count': { zh: '已選 {n} 條', en: '{n} selected' },
   'panel.route_category_new': { zh: '新增分類', en: 'New category' },
   'panel.route_category_delete_title': { zh: '刪除分類', en: 'Delete category' },
   'panel.route_category_delete_confirm': { zh: '刪除分類「{name}」？分類下的路線會自動移回「預設」分類。', en: 'Delete category "{name}"? Routes will return to "Default".' },
@@ -326,7 +330,7 @@ export const STRINGS = {
 
   // ── Panel extras ────────────────────────────
   'panel.navigate_hint': { zh: '在地圖上右鍵選擇目的地', en: 'Right-click on the map to set destination' },
-  'panel.joystick_hint': { zh: '拖曳右下角的搖桿,或按 WASD / 方向鍵控制移動', en: 'Drag the pad in the dock, or press WASD / arrow keys to move' },
+  'panel.joystick_hint': { zh: '拖曳下方面板裡的搖桿,或按 WASD / 方向鍵控制移動', en: 'Drag the pad in the dock, or press WASD / arrow keys to move' },
   'settings.title': { zh: '設定', en: 'Settings' },
   'settings.map_layer': { zh: '地圖圖層', en: 'Map layer' },
   'settings.search_provider': { zh: '地址搜尋來源', en: 'Search provider' },
@@ -433,6 +437,8 @@ export const STRINGS = {
   'bulk.summary_valid': { zh: '{n} 筆可匯入', en: '{n} valid' },
   'bulk.summary_errors_show': { zh: '{n} 筆錯誤(展開)', en: '{n} error(s) (show)' },
   'bulk.summary_errors_hide': { zh: '{n} 筆錯誤(收合)', en: '{n} error(s) (hide)' },
+  'bulk.err_format': { zh: '格式錯誤', en: 'bad format' },
+  'bulk.err_range': { zh: '超出範圍', en: 'out of range' },
   'bulk.errors_truncated': { zh: '… 還有 {n} 筆', en: '… and {n} more' },
   'bulk.import_with_count': { zh: '匯入 {n} 筆', en: 'Import {n}' },
   'bulk.importing': { zh: '匯入中…', en: 'Importing…' },
@@ -455,6 +461,7 @@ export const STRINGS = {
   'bm.empty': { zh: '尚無收藏', en: 'No bookmarks' },
   'bm.search_placeholder': { zh: '搜尋收藏名稱 / 座標', en: 'Search bookmark name or coords' },
   'bm.search_clear': { zh: '清除搜尋', en: 'Clear search' },
+  'bm.clear_tag_filter': { zh: '清除標籤篩選', en: 'Clear tag filter' },
   'bm.search_no_results': { zh: '找不到符合的收藏', en: 'No matching bookmarks' },
   'update.title': { zh: '有新版本可更新', en: 'Update available' },
   'update.current': { zh: '目前版本', en: 'Current version' },
@@ -717,6 +724,7 @@ export const STRINGS = {
 
   // ── Keyboard drag-reorder announcements (ReorderableList) ──
   'chain.stop_n': { zh: '停靠點 {n}', en: 'Stop {n}' },
+  'chain.stop_n_next': { zh: '停靠點 {n} · 距下一站 {dist}', en: 'Stop {n} · {dist} next' },
   'dnd.instructions': {
     zh: '按空白鍵或 Enter 拿起項目，用方向鍵移動，再按一次空白鍵或 Enter 放下，按 Esc 取消。',
     en: 'To pick up an item, press space or enter. Use the arrow keys to move it, press space or enter again to drop it, or press escape to cancel.',
