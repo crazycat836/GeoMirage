@@ -86,7 +86,10 @@ class RouteInterpolator:
             }
         )
 
-        carry = 0.0  # leftover distance from previous segment
+        # Distance travelled along the polyline since the last emitted point.
+        # Tracking path distance (not straight-line) keeps every step at
+        # step_dist even when segments are shorter than one step.
+        since_last = 0.0
         seg_idx = 0
 
         while seg_idx < len(coords) - 1:
@@ -99,11 +102,10 @@ class RouteInterpolator:
                 seg_idx += 1
                 continue
 
-            # How far along this segment we already are (from carry)
-            pos = carry  # meters from *a* along the segment
+            # Position of the next point, in meters from *a* along the segment
+            pos = step_dist - since_last
 
-            while pos + step_dist <= seg_dist:
-                pos += step_dist
+            while pos <= seg_dist:
                 time_offset += interval_sec
                 frac = pos / seg_dist
                 lat = a.lat + frac * (b.lat - a.lat)
@@ -117,9 +119,10 @@ class RouteInterpolator:
                         "seg_idx": seg_idx,
                     }
                 )
+                pos += step_dist
 
-            # Leftover distance rolls into the next segment
-            carry = seg_dist - pos
+            # Distance from the last emitted point to *b* rolls into the next segment
+            since_last = seg_dist - (pos - step_dist)
             seg_idx += 1
 
         # Always include the final waypoint
@@ -127,11 +130,8 @@ class RouteInterpolator:
         if results:
             prev = results[-1]
             if prev["lat"] != last.lat or prev["lng"] != last.lng:
-                remaining = RouteInterpolator.haversine(
-                    prev["lat"], prev["lng"], last.lat, last.lng
-                )
                 if speed_mps > 0:
-                    time_offset += remaining / speed_mps
+                    time_offset += since_last / speed_mps
                 results.append(
                     {
                         "lat": last.lat,

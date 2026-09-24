@@ -389,6 +389,46 @@ def test_interpolate_three_point_route_carries_distance_across_segments():
         assert p["bearing"] == pytest.approx(expected, abs=0.01)
 
 
+def _dense_polyline(seg_lengths_m, lat=25.0, lng=121.5):
+    """Due-east polyline whose consecutive vertices are *seg_lengths_m* apart."""
+    from models.schemas import Coordinate
+    from services.interpolator import RouteInterpolator
+
+    coords = [Coordinate(lat=lat, lng=lng)]
+    for seg in seg_lengths_m:
+        nlat, nlng = RouteInterpolator.move_point(coords[-1].lat, coords[-1].lng, 90.0, seg)
+        coords.append(Coordinate(lat=nlat, lng=nlng))
+    return coords
+
+
+@pytest.mark.parametrize(
+    "seg_lengths, speed_mps",
+    [
+        ([10.0] * 100, 16.67),          # 1 km, a vertex every 10 m, driving
+        ([15.0] * 60, 3.0),             # vertex every 15 m, walking
+        ([2.0 + (i * 7) % 29 for i in range(200)], 16.67),  # mixed 2-30 m segments
+    ],
+)
+def test_interpolate_dense_polyline_keeps_step_distance_and_total_time(seg_lengths, speed_mps):
+    from services.interpolator import RouteInterpolator
+
+    coords = _dense_polyline(seg_lengths)
+    points = RouteInterpolator.interpolate(coords, speed_mps, 1.0)
+
+    total = sum(seg_lengths)
+    assert points[-1]["timestamp_offset"] == pytest.approx(total / speed_mps, rel=0.05)
+
+    # The polyline is a straight line, so straight-line distance between
+    # consecutive points equals distance travelled along the route.
+    steps = [
+        RouteInterpolator.haversine(p["lat"], p["lng"], q["lat"], q["lng"])
+        for p, q in zip(points, points[1:])
+    ]
+    assert max(steps[:-1]) <= speed_mps * 1.1
+    assert min(steps[:-1]) >= speed_mps * 0.9
+    assert steps[-1] <= speed_mps * 1.1
+
+
 def test_interpolate_empty_and_single_point_routes():
     from models.schemas import Coordinate
     from services.interpolator import RouteInterpolator
