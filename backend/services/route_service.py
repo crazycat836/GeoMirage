@@ -44,6 +44,14 @@ class RouteUnavailableError(RuntimeError):
     code = "route_unavailable"
 
 
+class RouteServiceUnreachableError(RouteUnavailableError):
+    """OSRM itself could not be reached (transport failure / 5xx, or a
+    region already marked down) — as opposed to OSRM answering that no
+    road route exists between two specific points. Retrying with other
+    points cannot help, so modes that skip unroutable destinations still
+    abort on this one."""
+
+
 class _OsrmRejected(Exception):
     """OSRM was reachable but refused this specific request (HTTP 4xx or
     a logical error such as ``NoRoute``/``NoSegment`` in a 200 body).
@@ -239,7 +247,7 @@ class RouteService:
         key = self._region_key(*waypoints[0])
         cached = await self._region_state(key)
         if cached == "down":
-            raise RouteUnavailableError(
+            raise RouteServiceUnreachableError(
                 "Route planning service unreachable; retrying in a few minutes"
             )
         timeout = _TIMEOUT if cached == "ok" else self._PROBE_TIMEOUT
@@ -295,7 +303,7 @@ class RouteService:
             "OSRM unreachable for region %s (%s)",
             key, type(last_exc).__name__ if last_exc else "unknown",
         )
-        raise RouteUnavailableError(
+        raise RouteServiceUnreachableError(
             "Route planning service unreachable"
         ) from last_exc
 

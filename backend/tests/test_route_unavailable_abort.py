@@ -92,3 +92,73 @@ def test_navigate_aborts_to_idle_and_reraises():
         assert engine.state == SimulationState.IDLE
 
     asyncio.run(scenario())
+
+
+def test_random_walk_aborts_when_the_route_service_is_unreachable():
+    from models.schemas import Coordinate, MovementMode, SimulationState
+    from services.route_service import RouteServiceUnreachableError
+
+    class DownRouteService:
+        async def get_route(self, *args, **kwargs):
+            raise RouteServiceUnreachableError("Route planning service unreachable")
+
+    async def scenario():
+        engine, recorder = _make_engine()
+        engine.route_service = DownRouteService()
+        engine.current_position = Coordinate(lat=25.0, lng=121.5)
+
+        with pytest.raises(RouteUnavailableError):
+            await asyncio.wait_for(engine.random_walk(
+                Coordinate(lat=25.0, lng=121.5), 50.0, MovementMode.WALKING,
+                pause_enabled=False,
+            ), timeout=2.0)
+
+        assert engine.state == SimulationState.IDLE
+        assert recorder.states()[-1] == "idle"
+        assert "random_walk_complete" not in [t for t, _ in recorder.events]
+
+    asyncio.run(scenario())
+
+
+def test_random_walk_skips_a_destination_with_no_road_route(monkeypatch):
+    import core.random_walk as rw
+    from models.schemas import Coordinate, MovementMode, SimulationState
+    from services.route_service import RouteService
+
+    monkeypatch.setattr(rw, "_GENERIC_ERROR_BACKOFF_S", 0.0)
+
+    class FirstLegNoRoute:
+        def __init__(self):
+            self.calls = 0
+            self._inner = RouteService()
+
+        async def get_route(self, *args, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                raise RouteUnavailableError("No road route between the two points")
+            kwargs["force_straight"] = True
+            return await self._inner.get_route(*args, **kwargs)
+
+    async def scenario():
+        engine, recorder = _make_engine()
+        engine.route_service = FirstLegNoRoute()
+        engine.pick_speed_profile = lambda *a, **k: {
+            "speed_mps": 300.0, "jitter": 0.0, "update_interval": 0.01,
+        }
+        engine.current_position = Coordinate(lat=25.0, lng=121.5)
+
+        walk = asyncio.create_task(engine.random_walk(
+            Coordinate(lat=25.0, lng=121.5), 50.0, MovementMode.WALKING,
+            pause_enabled=False, seed=1,
+        ))
+        deadline = asyncio.get_running_loop().time() + 2.0
+        while not any(t == "random_walk_arrived" for t, _ in recorder.events):
+            assert asyncio.get_running_loop().time() < deadline, "walk never arrived"
+            await asyncio.sleep(0.01)
+        await engine.stop()
+        await asyncio.wait_for(walk, timeout=2.0)
+
+        assert engine.route_service.calls >= 2
+        assert engine.state == SimulationState.IDLE
+
+    asyncio.run(scenario())

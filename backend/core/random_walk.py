@@ -18,6 +18,7 @@ from core.handler_common import (
 )
 from core.movement_loop import RoutePushFailedError
 from services.interpolator import RouteInterpolator
+from services.route_service import RouteServiceUnreachableError
 from config import (
     DEFAULT_PAUSE_ENABLED,
     DEFAULT_PAUSE_MAX,
@@ -241,9 +242,12 @@ class RandomWalkHandler:
             engine._user_waypoint_next = 0
             await engine._move_along_route(coords, speed_profile)
             return _LEG_OK
-        except (asyncio.CancelledError, RoutePushFailedError):
-            # A leg the device refused to follow ends the walk with an
-            # error rather than counting as one more retryable failure.
+        except (asyncio.CancelledError, RoutePushFailedError, RouteServiceUnreachableError):
+            # A leg the device refused to follow, or a route service that
+            # is down for every destination, ends the walk with an error
+            # rather than counting as one more retryable failure. A single
+            # unroutable destination (plain RouteUnavailableError) still
+            # falls through to the generic path and a new point is drawn.
             raise
         except (ConnectionTerminatedError, ConnectionError, OSError) as exc:
             # Full context (backoff, retry counts) logged inside
