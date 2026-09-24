@@ -399,6 +399,7 @@ export const STRINGS = {
   'toast.no_destination': { zh: '請先在地圖上點擊設定目的地', en: 'Click the map to set a destination first' },
   'toast.no_waypoints': { zh: '尚未設定路徑點,請在地圖上點擊新增或使用隨機產生', en: 'No waypoints set, click the map to add, or use random generate' },
   'toast.start_failed': { zh: '啟動失敗', en: 'Failed to start' },
+  'toast.action_failed': { zh: '{action}失敗: {msg}', en: '{action} failed: {msg}' },
   'toast.pause_countdown': { zh: '到點暫停中 · 剩餘 {n}s', en: 'Paused at waypoint · {n}s left' },
 
   // ── Bookmarks ────────────────────────────────

@@ -2,7 +2,7 @@
 // These pin CURRENT behavior — they describe what the code does today,
 // not necessarily what it should do.
 import { describe, expect, test, vi } from 'vitest'
-import { toastForFanout, runWithFanout } from './sim-fanout'
+import { toastForFanout, runWithFanout, runWithFanoutOrToast } from './sim-fanout'
 import type { FanoutOutcome } from '../hooks/useSimulation'
 import type { StringKey } from '../i18n'
 
@@ -266,6 +266,43 @@ describe('runWithFanout', () => {
         showToast,
       }),
     ).rejects.toThrow('fanout failed')
+    expect(showToast).not.toHaveBeenCalled()
+  })
+})
+
+describe('runWithFanoutOrToast', () => {
+  test('toasts the failure instead of rejecting when the single thunk throws', async () => {
+    const { t } = makeT()
+    const showToast = vi.fn()
+
+    await expect(
+      runWithFanoutOrToast({
+        udids: [DEVICE_A.udid],
+        devices: [DEVICE_A],
+        action: 'Stop',
+        single: vi.fn().mockRejectedValue(new Error('503 busy')),
+        multi: vi.fn(),
+        t,
+        showToast,
+      }),
+    ).resolves.toBeUndefined()
+    expect(showToast).toHaveBeenCalledWith(
+      'toast.action_failed::{"action":"Stop","msg":"503 busy"}',
+    )
+  })
+
+  test('shows no toast when the single thunk succeeds', async () => {
+    const { t } = makeT()
+    const showToast = vi.fn()
+    await runWithFanoutOrToast({
+      udids: [DEVICE_A.udid],
+      devices: [DEVICE_A],
+      action: 'Pause',
+      single: vi.fn().mockResolvedValue(undefined),
+      multi: vi.fn(),
+      t,
+      showToast,
+    })
     expect(showToast).not.toHaveBeenCalled()
   })
 })

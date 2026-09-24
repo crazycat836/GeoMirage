@@ -62,3 +62,20 @@ export async function runWithFanout<T>(params: {
     await single()
   }
 }
+
+// `runWithFanout` for fire-and-forget controls (stop / pause / resume):
+// callers (dock buttons, ETA bar, Space key) never handle the promise, so a
+// single-device failure would otherwise be an unhandled rejection with no
+// visible message. The fan-out path already toasts via toastForFanout.
+export async function runWithFanoutOrToast<T>(
+  params: Parameters<typeof runWithFanout<T>>[0],
+): Promise<void> {
+  try {
+    await runWithFanout(params)
+  } catch (err: unknown) {
+    params.showToast(params.t('toast.action_failed', {
+      action: params.action,
+      msg: err instanceof Error ? err.message : String(err),
+    }))
+  }
+}

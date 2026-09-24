@@ -15,7 +15,7 @@ import {
 import { devWarn } from '../lib/dev-log'
 import { formatCoord } from '../lib/format'
 import { clampLat, normalizeLng } from '../lib/geo'
-import { FANOUT_MIN_DEVICES, runWithFanout, toastForFanout } from '../lib/sim-fanout'
+import { FANOUT_MIN_DEVICES, runWithFanout, runWithFanoutOrToast, toastForFanout } from '../lib/sim-fanout'
 import { generateRandomTour } from '../lib/waypoint_gen'
 import { useDeviceContext } from './DeviceContext'
 import { useToastContext } from './ToastContext'
@@ -609,7 +609,7 @@ export function SimProvider({ children }: SimProviderProps) {
       showToast(toastForFanout(t, t('mode.joystick'), outcome, connectedDevices))
       return
     }
-    await runWithFanout({
+    await runWithFanoutOrToast({
       udids,
       devices: connectedDevices,
       action: t('generic.stop'),
@@ -646,7 +646,7 @@ export function SimProvider({ children }: SimProviderProps) {
   const handlePause = useCallback(async () => {
     const { sim, connectedDevices, t, showToast } = latest.current
     const udids = connectedDevices.map((d) => d.udid)
-    await runWithFanout({
+    await runWithFanoutOrToast({
       udids,
       devices: connectedDevices,
       action: t('generic.pause'),
@@ -660,7 +660,7 @@ export function SimProvider({ children }: SimProviderProps) {
   const handleResume = useCallback(async () => {
     const { sim, connectedDevices, t, showToast } = latest.current
     const udids = connectedDevices.map((d) => d.udid)
-    await runWithFanout({
+    await runWithFanoutOrToast({
       udids,
       devices: connectedDevices,
       action: t('generic.resume'),
