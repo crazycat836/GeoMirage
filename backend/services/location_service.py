@@ -491,11 +491,11 @@ class LegacyLocationService(LocationService):
         if asyncio.iscoroutine(result):
             await result
 
-    def _reset_service(self) -> None:
+    async def _reset_service(self) -> None:
         """Drop the cached DtSimulateLocation so the next call reconstructs it."""
         try:
             if self._service is not None and hasattr(self._service, "close"):
-                self._service.close()
+                await self._maybe_await(self._service.close())
         except Exception:
             logger.debug("Error closing stale DtSimulateLocation", exc_info=True)
         self._service = None
@@ -510,7 +510,7 @@ class LegacyLocationService(LocationService):
         except (OSError, EOFError, BrokenPipeError, ConnectionResetError) as exc:
             logger.warning("Legacy location channel dropped (%s: %s); reconnecting and retrying",
                            type(exc).__name__, exc)
-            self._reset_service()
+            await self._reset_service()
             try:
                 svc = self._ensure_service()
                 await self._maybe_await(svc.set(lat, lng))
@@ -550,7 +550,7 @@ class LegacyLocationService(LocationService):
                 return
             logger.warning("Legacy clear channel dropped (%s: %s); reconnecting",
                            type(exc).__name__, exc)
-            self._reset_service()
+            await self._reset_service()
             try:
                 svc = self._ensure_service()
                 await self._maybe_await(svc.clear())

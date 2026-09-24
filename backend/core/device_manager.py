@@ -50,6 +50,18 @@ logger = logging.getLogger(__name__)
 # top of this module.
 
 
+async def _close_quietly(lockdown: object, udid: str) -> None:
+    """Close a usbmux lockdown client, logging (not raising) on failure.
+
+    On device-lost teardown the socket is usually already gone, so a
+    close error is expected and only worth a DEBUG line.
+    """
+    try:
+        await lockdown.close()
+    except Exception:
+        logger.debug("Error closing lockdown for %s", udid, exc_info=True)
+
+
 @dataclass
 class _ActiveConnection:
     """Internal bookkeeping for a single connected device."""
@@ -216,6 +228,7 @@ class DeviceManager:
         devices: list[DeviceInfo] = []
         for udid in order:
             bag = bags[udid]
+            lockdown = None
             try:
                 # autopair=False: listing devices must NEVER trigger a
                 # pairing handshake. With autopair=True, every /api/device/list
@@ -307,6 +320,11 @@ class DeviceManager:
                 ))
             except Exception:
                 logger.warning("Failed to query device %s", udid, exc_info=True)
+            finally:
+                # Listing only needs the lockdown for this one query; left
+                # open it lingers until GC on every /device/list poll.
+                if lockdown is not None:
+                    await _close_quietly(lockdown, udid)
 
         return devices
 
@@ -382,17 +400,23 @@ class DeviceManager:
         ios_version_str: str = lockdown.all_values.get("ProductVersion", "0.0")
         ver = parse_ios_version(ios_version_str)
 
-        if ver < (16, 0):
-            logger.warning(
-                "Refusing connect: %s reports iOS %s, below minimum %s",
-                udid, ios_version_str, UnsupportedIosVersionError.MIN_VERSION,
-            )
-            raise UnsupportedIosVersionError(ios_version_str)
+        # Until a connection record owns the lockdown, close it on any
+        # failure so it doesn't linger until GC.
+        try:
+            if ver < (16, 0):
+                logger.warning(
+                    "Refusing connect: %s reports iOS %s, below minimum %s",
+                    udid, ios_version_str, UnsupportedIosVersionError.MIN_VERSION,
+                )
+                raise UnsupportedIosVersionError(ios_version_str)
 
-        if ver >= (17, 0):
-            conn = await connect_via_tunnel(udid, lockdown, ios_version_str)
-        else:
-            conn = connect_via_legacy(udid, lockdown, ios_version_str)
+            if ver >= (17, 0):
+                conn = await connect_via_tunnel(udid, lockdown, ios_version_str)
+            else:
+                conn = connect_via_legacy(udid, lockdown, ios_version_str)
+        except BaseException:
+            await _close_quietly(lockdown, udid)
+            raise
         conn.connection_type = connection_type
 
         # Re-check membership under the lock. The initial dup-gate at the top
@@ -501,6 +525,12 @@ class DeviceManager:
                 await conn.tunnel_proxy.close()
             except Exception as exc:
                 logger.warning("Error closing tunnel proxy for %s: %s", udid, exc)
+
+        # Close the usbmux lockdown last: on iOS 17+ it carried the tunnel
+        # handshake, on iOS 16 it is ``conn.lockdown`` itself. WiFi-tunnel
+        # connections have none.
+        if conn.usbmux_lockdown is not None:
+            await _close_quietly(conn.usbmux_lockdown, udid)
 
     # ------------------------------------------------------------------
     # Location service
