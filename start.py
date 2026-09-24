@@ -195,8 +195,20 @@ def _refuse_root_install(what: str) -> None:
     print("      再視需要（iOS 17+ 通道）改用 sudo python3 start.py 啟動。")
 
 
+def _report_failure(what: str, result: subprocess.CompletedProcess) -> None:
+    """Print a failed install step with its exit code and captured stderr.
+
+    Steps run without ``capture_output`` already streamed their errors to
+    the terminal, so ``result.stderr`` is None and only the code is shown.
+    """
+    print("失敗 ✗")
+    print(f"      [!] {what} 失敗（exit code {result.returncode}）")
+    for line in (result.stderr or "").strip().splitlines():
+        print(f"      {line}")
+
+
 def install_backend() -> bool:
-    """Ensure backend deps are installed. Returns False when blocked."""
+    """Ensure backend deps are installed. Returns False when blocked or failed."""
     print("  [1/4] 檢查後端依賴...", end=" ", flush=True)
     req = os.path.join(BACKEND, "requirements.txt")
 
@@ -204,6 +216,9 @@ def install_backend() -> bool:
         [sys.executable, "-m", "pip", "install", "-r", req, "--dry-run", "-q"],
         capture_output=True, text=True,
     )
+    if dry.returncode != 0:
+        _report_failure("pip install --dry-run", dry)
+        return False
 
     if "would install" not in dry.stdout.lower():
         print("已就緒 ✓")
@@ -213,16 +228,19 @@ def install_backend() -> bool:
         _refuse_root_install("後端依賴 (pip install)")
         return False
     print("安裝中...")
-    subprocess.run(
+    result = subprocess.run(
         [sys.executable, "-m", "pip", "install", "-r", req, "-q"],
         cwd=BACKEND,
     )
+    if result.returncode != 0:
+        _report_failure("pip install", result)
+        return False
     print("        完成 ✓")
     return True
 
 
 def install_frontend() -> bool:
-    """Ensure frontend deps are installed. Returns False when blocked."""
+    """Ensure frontend deps are installed. Returns False when blocked or failed."""
     print("  [2/4] 檢查前端依賴...", end=" ", flush=True)
     nm = os.path.join(FRONTEND, "node_modules")
     if os.path.isdir(nm):
@@ -233,7 +251,10 @@ def install_frontend() -> bool:
         _refuse_root_install("前端依賴 (npm install)")
         return False
     print("安裝中...")
-    subprocess.run(["npm", "install"], cwd=FRONTEND, shell=(os.name == "nt"))
+    result = subprocess.run(["npm", "install"], cwd=FRONTEND, shell=(os.name == "nt"))
+    if result.returncode != 0:
+        _report_failure("npm install", result)
+        return False
     print("        完成 ✓")
     return True
 
@@ -456,7 +477,7 @@ def main():
     deps_ok = install_frontend() and deps_ok
     print()
     if not deps_ok:
-        input("  依賴尚未就緒，請先以一般使用者執行一次後重試。按 Enter 離開...")
+        input("  依賴尚未就緒，請依上方訊息處理後重試。按 Enter 離開...")
         return
 
     # 啟動服務

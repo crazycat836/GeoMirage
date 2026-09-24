@@ -105,3 +105,45 @@ def test_root_owned_vite_cache_is_removed(monkeypatch, tmp_path):
     monkeypatch.setattr(start.shutil, "rmtree", lambda p, **k: removed.append(p))
     start._remove_root_owned_vite_cache()
     assert removed == [str(tmp_path / "node_modules" / ".vite")]
+
+
+# ── #97: install steps check pip / npm exit codes ───────────────────────
+
+
+def _completed(returncode=0, stdout="", stderr=""):
+    return types.SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
+
+
+def test_backend_dry_run_failure_is_not_ready(monkeypatch, capsys):
+    monkeypatch.setattr(start, "_is_effective_root", lambda: False)
+    monkeypatch.setattr(
+        start.subprocess, "run",
+        lambda argv, **kw: _completed(1, "", "error: externally-managed-environment"),
+    )
+    assert start.install_backend() is False
+    out = capsys.readouterr().out
+    assert "已就緒" not in out
+    assert "externally-managed-environment" in out
+
+
+def test_backend_install_failure_is_not_done(monkeypatch, capsys):
+    monkeypatch.setattr(start, "_is_effective_root", lambda: False)
+    results = iter([_completed(0, "Would install fastapi-1.0"), _completed(1)])
+    monkeypatch.setattr(start.subprocess, "run", lambda argv, **kw: next(results))
+    assert start.install_backend() is False
+    assert "完成" not in capsys.readouterr().out
+
+
+def test_frontend_install_failure_is_not_done(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(start, "FRONTEND", str(tmp_path))  # no node_modules
+    monkeypatch.setattr(start, "_is_effective_root", lambda: False)
+    monkeypatch.setattr(start.subprocess, "run", lambda argv, **kw: _completed(1))
+    assert start.install_frontend() is False
+    assert "完成" not in capsys.readouterr().out
+
+
+def test_wait_for_port_fails_fast_when_process_exits(monkeypatch):
+    proc = types.SimpleNamespace(poll=lambda: 1, returncode=1)
+    monkeypatch.setattr(start, "is_port_open", lambda port: False)
+    monkeypatch.setattr(start.time, "sleep", lambda s: pytest.fail("should not wait"))
+    assert start.wait_for_port(1, "後端", proc=proc) is False
