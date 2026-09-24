@@ -74,6 +74,10 @@ export default function Drawer({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        // Closed, the panel only slides off-screen and stays mounted; inert
+        // keeps Tab and assistive tech out of it until it opens again.
+        inert={!open}
+        aria-hidden={open ? undefined : true}
         className={[
           'fixed inset-y-0 z-[var(--z-drawer)]',
           isLeft ? 'left-0' : 'right-0',

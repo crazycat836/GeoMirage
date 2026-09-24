@@ -183,12 +183,18 @@ export default function BookmarksPanel({ onBookmarkClick }: BookmarksPanelProps)
     return filtered
   }, [filtered, sortMode, sections])
 
-  // Match by coordinate to flag the currently-loaded bookmark.
-  const isBookmarkActive = useCallback((b: Bookmark): boolean => {
-    if (!currentPosition) return false
-    return Math.abs(b.lat - currentPosition.lat) < BOOKMARK_MATCH_EPSILON
-      && Math.abs(b.lng - currentPosition.lng) < BOOKMARK_MATCH_EPSILON
-  }, [currentPosition])
+  // Match by coordinate to flag the currently-loaded bookmark(s). Computed
+  // once per position here so each row gets a plain boolean and only the
+  // rows whose flag flips re-render on a position tick.
+  const activeIds = useMemo(() => {
+    const ids = new Set<string>()
+    if (!currentPosition) return ids
+    for (const b of bookmarks) {
+      if (Math.abs(b.lat - currentPosition.lat) < BOOKMARK_MATCH_EPSILON
+        && Math.abs(b.lng - currentPosition.lng) < BOOKMARK_MATCH_EPSILON) ids.add(b.id)
+    }
+    return ids
+  }, [bookmarks, currentPosition])
 
   const placeChips = useMemo<Chip<string>[]>(() => {
     const list: Chip<string>[] = [{ id: ALL_ID, label: t('bm.filter_all'), count: bookmarks.length }]
@@ -404,6 +410,10 @@ export default function BookmarksPanel({ onBookmarkClick }: BookmarksPanelProps)
   // (the provider re-creates ``value`` as a plain object literal each
   // render; depending on the whole ``bm`` would invalidate every row).
   const { touchBookmark } = bm
+  const activateBookmark = useCallback((b: Bookmark) => {
+    touchBookmark(b.id)
+    onBookmarkClick(b.lat, b.lng)
+  }, [touchBookmark, onBookmarkClick])
   const renderBookmarkRow = useCallback((b: Bookmark) => (
     <BookmarkRow
       key={b.id}
@@ -420,12 +430,9 @@ export default function BookmarksPanel({ onBookmarkClick }: BookmarksPanelProps)
       onInlineEditCommit={commitInlineRename}
       onInlineEditCancel={cancelInlineEdit}
       onStartInlineEdit={startInlineEdit}
-      isActive={isBookmarkActive(b)}
+      isActive={activeIds.has(b.id)}
       isCopied={copiedId === b.id}
-      onActivate={(lat, lng) => {
-        touchBookmark(b.id)
-        onBookmarkClick(lat, lng)
-      }}
+      onActivate={activateBookmark}
       onEdit={editBookmark}
       onDelete={confirmDeleteOne}
       rowMenuItems={rowMenuItems}
@@ -434,8 +441,8 @@ export default function BookmarksPanel({ onBookmarkClick }: BookmarksPanelProps)
     placeMap, tagMap, displayPlace, selectionMode, selectedIds,
     toggleSelected, inlineEditId, inlineEditName,
     commitInlineRename, cancelInlineEdit, startInlineEdit,
-    isBookmarkActive, copiedId, onBookmarkClick,
-    editBookmark, confirmDeleteOne, rowMenuItems, touchBookmark,
+    activeIds, copiedId, activateBookmark,
+    editBookmark, confirmDeleteOne, rowMenuItems,
   ])
 
   return (

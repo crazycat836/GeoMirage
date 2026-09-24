@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { BookOpen, Upload, Download, FileUp, Loader2 } from 'lucide-react'
 import { useBookmarkContext } from '../../contexts/BookmarkContext'
 import { useRouteLibrary } from '../../contexts/RouteLibraryContext'
@@ -26,6 +26,11 @@ function LibraryDrawer({ open, onClose }: LibraryDrawerProps) {
   const { handleTeleport } = useSimActions()
 
   const [activeTab, setActiveTab] = useState<TabId>('bookmarks')
+
+  const handleBookmarkClick = useCallback((lat: number, lng: number) => {
+    handleTeleport(lat, lng)
+    onClose()
+  }, [handleTeleport, onClose])
 
   const savedRoutes = routeLib.savedRoutes as readonly { id: string }[]
 
@@ -113,9 +118,7 @@ function LibraryDrawer({ open, onClose }: LibraryDrawerProps) {
 
       {activeTab === 'bookmarks' ? (
         <div {...panelPropsForTab('bookmarks')}>
-          <BookmarksPanel
-            onBookmarkClick={(lat, lng) => { handleTeleport(lat, lng); onClose() }}
-          />
+          <BookmarksPanel onBookmarkClick={handleBookmarkClick} />
         </div>
       ) : (
         <div {...panelPropsForTab('routes')}>

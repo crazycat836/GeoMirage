@@ -39,7 +39,9 @@ interface BookmarkRowProps {
   /** Show the copy-confirmation Check flash next to the title. */
   isCopied: boolean
 
-  onActivate: (lat: number, lng: number) => void
+  /** Teleport to the bookmark. Takes the bookmark so the parent can pass
+   *  one stable callback to every row. */
+  onActivate: (b: Bookmark) => void
   onEdit: (b: Bookmark) => void
   onDelete: (b: Bookmark) => void
   /** Lazy menu builder so the kebab can compute place-move targets per row. */
@@ -202,7 +204,7 @@ function BookmarkRowImpl({
         selected={(selectionMode && checked) || isActive}
         onClick={() => {
           if (selectionMode) onToggleSelected(b.id)
-          else if (!isInlineEditing) onActivate(b.lat, b.lng)
+          else if (!isInlineEditing) onActivate(b)
         }}
         onDoubleClick={(e) => {
           if (selectionMode) return
