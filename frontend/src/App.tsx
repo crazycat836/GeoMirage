@@ -429,22 +429,14 @@ function AppShell() {
           places={bm.places}
           tags={bm.tags}
           onClose={() => bm.setAddBmDialog(null)}
-          onSubmit={async (values: BookmarkEditValues) => {
-            bm.setAddBmDialog(null)
-            try {
-              await bm.createBookmark({
-                name: values.name,
-                lat: values.lat,
-                lng: values.lng,
-                place_id: values.placeId,
-                tags: values.tagIds,
-                note: values.note,
-              })
-            } catch (err: unknown) {
-              const message = err instanceof Error ? err.message : ''
-              toast.showToast(t('toast.save_failed', { msg: message }))
-            }
-          }}
+          onSubmit={(values: BookmarkEditValues) => bm.submitAddBookmark({
+            name: values.name,
+            lat: values.lat,
+            lng: values.lng,
+            place_id: values.placeId,
+            tags: values.tagIds,
+            note: values.note,
+          })}
         />
 
         {/* The bottom-left device chip was removed in the design-handoff

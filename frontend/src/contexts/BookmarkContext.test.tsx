@@ -5,6 +5,7 @@ import { BookmarkProvider, useBookmarkContext } from './BookmarkContext'
 
 const showToast = vi.fn()
 const reorderBookmarks = vi.fn()
+const createBookmark = vi.fn()
 
 vi.mock('./ToastContext', () => ({
   useToastContext: () => ({ showToast }),
@@ -19,6 +20,7 @@ vi.mock('../services/api', () => ({
   getTags: vi.fn().mockResolvedValue([]),
   backfillBookmarkFlags: vi.fn().mockResolvedValue({ filled: 0 }),
   reorderBookmarks: (ids: string[]) => reorderBookmarks(ids),
+  createBookmark: (bm: unknown) => createBookmark(bm),
 }))
 
 afterEach(() => {
@@ -41,5 +43,43 @@ describe('BookmarkProvider reorder', () => {
 
     expect(reorderBookmarks).toHaveBeenCalledWith(['b', 'a'])
     expect(showToast).toHaveBeenCalledWith('toast.reorder_failed')
+  })
+})
+
+describe('BookmarkProvider add-bookmark dialog', () => {
+  type Ctx = ReturnType<typeof useBookmarkContext>
+  function renderCtx() {
+    const ref: { current: Ctx | null } = { current: null }
+    function Consumer() {
+      ref.current = useBookmarkContext()
+      return null
+    }
+    render(<BookmarkProvider><Consumer /></BookmarkProvider>)
+    return ref
+  }
+  const payload = { name: 'Cafe', lat: 25, lng: 121, place_id: 'default', tags: ['t1'], note: 'n' }
+
+  it('keeps the dialog open and toasts when the save fails', async () => {
+    createBookmark.mockRejectedValueOnce(new Error('disk full'))
+    const ctx = renderCtx()
+    await waitFor(() => expect(ctx.current).not.toBeNull())
+    act(() => { ctx.current!.handleAddBookmark(25, 121) })
+
+    await act(async () => { await ctx.current!.submitAddBookmark(payload) })
+
+    expect(createBookmark).toHaveBeenCalledWith(payload)
+    expect(ctx.current!.addBmDialog).toEqual({ lat: 25, lng: 121 })
+    expect(showToast).toHaveBeenCalledWith('toast.save_failed')
+  })
+
+  it('closes the dialog after a successful save', async () => {
+    createBookmark.mockResolvedValueOnce({ id: 'x', ...payload })
+    const ctx = renderCtx()
+    await waitFor(() => expect(ctx.current).not.toBeNull())
+    act(() => { ctx.current!.handleAddBookmark(25, 121) })
+
+    await act(async () => { await ctx.current!.submitAddBookmark(payload) })
+
+    expect(ctx.current!.addBmDialog).toBeNull()
   })
 })

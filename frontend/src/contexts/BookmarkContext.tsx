@@ -44,6 +44,9 @@ interface BookmarkContextValue {
   addBmDialog: AddBmDialog | null
   setAddBmDialog: React.Dispatch<React.SetStateAction<AddBmDialog | null>>
   handleAddBookmark: (lat: number, lng: number) => void
+  /** Save the add-bookmark dialog. Closes it only on success; on failure it
+   *  stays open with the user's input and a save_failed toast is shown. */
+  submitAddBookmark: (bm: Omit<Bookmark, 'id'>) => Promise<void>
 
   // Bookmark import/export
   handleBookmarkImport: (file: File) => Promise<void>
@@ -69,6 +72,17 @@ export function BookmarkProvider({ children }: { children: React.ReactNode }) {
   const handleAddBookmark = useCallback((lat: number, lng: number) => {
     setAddBmDialog({ lat, lng })
   }, [])
+
+  const createBookmark = bm.createBookmark
+  const submitAddBookmark = useCallback(async (payload: Omit<Bookmark, 'id'>) => {
+    try {
+      await createBookmark(payload)
+      setAddBmDialog(null)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : ''
+      showToast(t('toast.save_failed', { msg: message }))
+    }
+  }, [createBookmark, showToast, t])
 
   const handleBookmarkImport = useCallback(async (file: File) => {
     setImportingBookmarks(true)
@@ -185,6 +199,7 @@ export function BookmarkProvider({ children }: { children: React.ReactNode }) {
     addBmDialog,
     setAddBmDialog,
     handleAddBookmark,
+    submitAddBookmark,
 
     handleBookmarkImport,
     handleBookmarkExport,
@@ -198,7 +213,7 @@ export function BookmarkProvider({ children }: { children: React.ReactNode }) {
     bm.createPlace, bm.updatePlace, bm.deletePlace, bm.reorderPlaces,
     bm.createTag, bm.updateTag, bm.deleteTag, bm.reorderTags, bm.refresh,
     createBookmarksBulk,
-    addBmDialog, setAddBmDialog, handleAddBookmark,
+    addBmDialog, setAddBmDialog, handleAddBookmark, submitAddBookmark,
     handleBookmarkImport, handleBookmarkExport, importingBookmarks,
     handleBookmarksReorder,
   ])
