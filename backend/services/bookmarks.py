@@ -13,9 +13,12 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
+
+from pydantic import ValidationError
 
 from config import BOOKMARKS_FILE
 from models.schemas import (
@@ -36,6 +39,78 @@ from services.bookmarks_migration import (
 from services.json_store import JsonModelStore, next_sort_order, reorder_by_ids
 
 logger = logging.getLogger(__name__)
+
+
+# Import dedup: a bookmark with the same (trimmed, case-folded) name and the
+# same coordinates at this many decimals (~1 m) counts as already present.
+_DEDUP_COORD_DECIMALS = 5
+
+
+@dataclass(frozen=True)
+class ImportResult:
+    """Outcome of :meth:`BookmarkManager.import_json`."""
+
+    imported: int
+    skipped_duplicates: int
+    # One entry per rejected row: {axis, index, field, reason}. ``reason`` is
+    # a stable code ("missing" | "out_of_range" | "invalid") the UI maps to
+    # its own wording.
+    invalid: list[dict] = field(default_factory=list)
+
+
+def _bookmark_key(bm: Bookmark) -> tuple[str, float, float]:
+    return (
+        bm.name.strip().casefold(),
+        round(bm.lat, _DEDUP_COORD_DECIMALS),
+        round(bm.lng, _DEDUP_COORD_DECIMALS),
+    )
+
+
+_RANGE_ERROR_TYPES = {"less_than", "less_than_equal", "greater_than", "greater_than_equal"}
+
+
+def _describe_validation_error(exc: ValidationError) -> dict:
+    """First error of *exc* as ``{field, reason}`` with a stable reason code."""
+    errors = exc.errors()
+    if not errors:
+        return {"field": "", "reason": "invalid"}
+    err = errors[0]
+    loc = err.get("loc") or ()
+    field_name = str(loc[0]) if loc else ""
+    etype = err.get("type", "")
+    if etype == "missing":
+        reason = "missing"
+    elif etype in _RANGE_ERROR_TYPES:
+        reason = "out_of_range"
+    else:
+        reason = "invalid"
+    return {"field": field_name, "reason": reason}
+
+
+def _merge_axis(live: list, incoming: list) -> dict[str, str]:
+    """Merge incoming places/tags into *live* (mutated in place).
+
+    Returns the incoming-id → live-id map. An incoming entry whose id or
+    case-insensitive name matches a live one maps onto it; the rest are
+    appended under a fresh UUID.
+    """
+    id_map: dict[str, str] = {}
+    live_ids = {item.id for item in live}
+    by_name = {item.name.strip().casefold(): item.id for item in live}
+    for item in incoming:
+        if item.id in live_ids:
+            id_map[item.id] = item.id
+            continue
+        name_key = item.name.strip().casefold()
+        if name_key in by_name:
+            id_map[item.id] = by_name[name_key]
+            continue
+        new_id = str(uuid.uuid4())
+        id_map[item.id] = new_id
+        live.append(item.model_copy(update={"id": new_id}))
+        live_ids.add(new_id)
+        by_name[name_key] = new_id
+    return id_map
 
 
 # Touch endpoint debounce window. Each `touch_bookmark` call writes the
@@ -530,58 +605,64 @@ class BookmarkManager(JsonModelStore[BookmarkStore]):
     def export_json(self) -> str:
         return self.store.model_dump_json(indent=2)
 
-    async def import_json(self, data: str) -> int:
+    async def import_json(self, data: str) -> ImportResult:
         """Import bookmarks (and places/tags) from a JSON string.
 
         Accepts both v0 (`categories` + `category_id`) and v1 payloads — v0
         blobs are run through the same migration as on-disk loads.
 
-        Every imported place/tag/bookmark gets a freshly-minted UUID
-        before it is appended, and the bookmark's `place_id` / `tags`
-        references are remapped through the old→new id translation. This
-        prevents a crafted payload from re-using preset ids (e.g.
-        ``default``, ``preset_scanner``) to shadow built-in places/tags,
-        and also avoids silent collisions when the same export is
-        imported twice. Mirrors the regenerate-on-import behaviour of
-        ``api/route.py:import_all_saved_routes``.
+        Rows are validated one by one: a bad row is skipped and reported
+        (``invalid``: axis, index, field, reason) while the rest import.
 
-        Returns the number of bookmarks imported.
+        Re-importing is idempotent:
+
+        - A place/tag whose id or (case-insensitive) name already exists
+          maps onto the live entry instead of being cloned.
+        - A bookmark whose name and coordinates (rounded to
+          :data:`_DEDUP_COORD_DECIMALS` places, ~1 m) match an existing
+          one — or an earlier row of the same file — is skipped and
+          counted in ``skipped_duplicates``.
+
+        New places/tags/bookmarks get freshly-minted UUIDs, and the
+        bookmark's `place_id` / `tags` references are remapped through the
+        old→new id translation. This prevents a crafted payload from
+        re-using preset ids (e.g. ``default``, ``preset_scanner``) to
+        shadow built-in places/tags. Mirrors the regenerate-on-import
+        behaviour of ``api/route.py:import_all_saved_routes``.
         """
         try:
             raw = json.loads(data)
             raw, _ = _migrate_v0_to_v1(raw)
-            incoming = BookmarkStore(**raw)
         except Exception as exc:
             logger.error("Invalid bookmark JSON: %s", exc)
-            return 0
+            return ImportResult(0, 0, [{"axis": "file", "index": -1, "field": "", "reason": "invalid"}])
+
+        invalid: list[dict] = []
+
+        def _parse(axis: str, model, items) -> list:
+            parsed = []
+            for index, item in enumerate(items or []):
+                try:
+                    parsed.append(model.model_validate(item))
+                except ValidationError as exc:
+                    invalid.append({"axis": axis, "index": index, **_describe_validation_error(exc)})
+            return parsed
+
+        in_places = _parse("places", BookmarkPlace, raw.get("places"))
+        in_tags = _parse("tags", BookmarkTag, raw.get("tags"))
+        in_bookmarks = _parse("bookmarks", Bookmark, raw.get("bookmarks"))
+        # Report bookmark rows first (what the user cares about), in file order.
+        invalid.sort(key=lambda e: (e["axis"] != "bookmarks", e["axis"], e["index"]))
 
         async with self._lock:
-            # ── Places ────────────────────────────────────────────────
-            # Build an old_id → new_id translation so bookmark.place_id
-            # references survive the UUID remint. If the payload re-uses
-            # an id that already lives in our store (preset like
-            # ``default`` or a real entry from a previous import), we
-            # redirect bookmarks at the *live* entry instead of cloning.
-            place_id_map: dict[str, str] = {}
-            live_place_ids = {p.id for p in self.store.places}
-            for place in incoming.places:
-                if place.id in live_place_ids:
-                    place_id_map[place.id] = place.id
-                    continue
-                new_id = str(uuid.uuid4())
-                place_id_map[place.id] = new_id
-                self.store.places.append(place.model_copy(update={"id": new_id}))
-
-            # ── Tags ──────────────────────────────────────────────────
-            tag_id_map: dict[str, str] = {}
-            live_tag_ids = {t.id for t in self.store.tags}
-            for tag in incoming.tags:
-                if tag.id in live_tag_ids:
-                    tag_id_map[tag.id] = tag.id
-                    continue
-                new_id = str(uuid.uuid4())
-                tag_id_map[tag.id] = new_id
-                self.store.tags.append(tag.model_copy(update={"id": new_id}))
+            # ── Places / tags ─────────────────────────────────────────
+            # Build an old_id → new_id translation so bookmark references
+            # survive the UUID remint. An id or name that already lives in
+            # our store (preset like ``default`` or an entry from a previous
+            # import) redirects to the *live* entry instead of cloning.
+            axis_sizes = (len(self.store.places), len(self.store.tags))
+            place_id_map = _merge_axis(self.store.places, in_places)
+            tag_id_map = _merge_axis(self.store.tags, in_tags)
 
             # ── Bookmarks ─────────────────────────────────────────────
             # Refresh post-import id sets so a bookmark pointing at an
@@ -589,8 +670,15 @@ class BookmarkManager(JsonModelStore[BookmarkStore]):
             # gets dropped instead of carrying a dangling reference.
             valid_place_ids = {p.id for p in self.store.places}
             valid_tag_ids = {t.id for t in self.store.tags}
+            seen = {_bookmark_key(b) for b in self.store.bookmarks}
             imported = 0
-            for bm in incoming.bookmarks:
+            skipped = 0
+            for bm in in_bookmarks:
+                key = _bookmark_key(bm)
+                if key in seen:
+                    skipped += 1
+                    continue
+                seen.add(key)
                 mapped_place = place_id_map.get(bm.place_id, bm.place_id)
                 if mapped_place not in valid_place_ids:
                     mapped_place = "default"
@@ -604,7 +692,10 @@ class BookmarkManager(JsonModelStore[BookmarkStore]):
                 self.store.bookmarks.append(new_bm)
                 imported += 1
 
-            if imported:
+            if imported or (len(self.store.places), len(self.store.tags)) != axis_sizes:
                 await self._persist()
-            logger.info("Imported %d bookmarks", imported)
-            return imported
+            logger.info(
+                "Imported %d bookmarks (%d duplicates skipped, %d invalid rows)",
+                imported, skipped, len(invalid),
+            )
+            return ImportResult(imported, skipped, invalid)

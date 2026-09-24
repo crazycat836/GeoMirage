@@ -443,7 +443,6 @@ export const STRINGS = {
   'bm.latlng_placeholder': { zh: '緯度,或貼上「緯度, 經度」', en: 'Latitude (or paste "lat, lng")' },
   'bm.export': { zh: '匯出', en: 'Export' },
   'bm.import': { zh: '匯入', en: 'Import' },
-  'bm.import_success': { zh: '匯入成功:共 {n} 筆', en: 'Entries imported: {n}' },
   'bm.import_failed': { zh: '匯入失敗:{error}', en: 'Import failed: {error}' },
   'bm.copy': { zh: '複製名稱與座標', en: 'Copy name & coords' },
   'bm.name_placeholder': { zh: '收藏名稱', en: 'Bookmark name' },
@@ -692,6 +691,14 @@ export const STRINGS = {
 
   // ── Bookmark import (UX fix) ──
   'bm.import_none': { zh: '沒有匯入新收藏', en: 'No new bookmarks imported' },
+  'bm.import_summary': { zh: '匯入 {n} 筆 · 略過重複 {dup} 筆 · 無效 {bad} 筆', en: 'Imported {n} · skipped {dup} duplicate(s) · {bad} invalid' },
+  'bm.import_invalid_row': { zh: '第 {row} 筆：{reason}', en: 'row {row}: {reason}' },
+  'bm.import_reason_missing': { zh: '缺少{field}', en: 'missing {field}' },
+  'bm.import_reason_out_of_range': { zh: '{field}超出範圍', en: '{field} out of range' },
+  'bm.import_reason_invalid': { zh: '{field}格式錯誤', en: 'invalid {field}' },
+  'bm.import_field_lat': { zh: '緯度', en: 'latitude' },
+  'bm.import_field_lng': { zh: '經度', en: 'longitude' },
+  'bm.import_field_name': { zh: '名稱', en: 'name' },
 
   // ── Search results a11y (UX fix) ──
   'search.results_aria': { zh: '搜尋結果', en: 'Search results' },

@@ -52,4 +52,12 @@ export const reorderTags = (orderedIds: string[]) =>
 // Import / export
 export const downloadBookmarksExport = (filename: string) =>
   downloadAuthed('/api/bookmarks/export', filename)
-export const importBookmarks = (data: BookmarkStore) => request<{ imported: number }>('POST', '/api/bookmarks/import', data)
+/** Import outcome. `invalid` rows were skipped; `index` is 0-based into the
+ *  file's `axis` array, `reason` is 'missing' | 'out_of_range' | 'invalid'. */
+export interface BookmarkImportResult {
+  imported: number
+  skipped_duplicates: number
+  invalid: { axis: string; index: number; field: string; reason: string }[]
+}
+export const importBookmarks = (data: BookmarkStore) =>
+  request<BookmarkImportResult>('POST', '/api/bookmarks/import', data)

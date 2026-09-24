@@ -157,14 +157,16 @@ def test_note_round_trips_through_create_and_update(manager):
 
 
 def test_note_survives_export_import(manager):
-    _create(manager, note="sunrise spot")
+    created = _create(manager, note="sunrise spot")
     exported = manager.export_json()
+    # Import dedups against the live store, so remove the original first.
+    asyncio.run(manager.delete_bookmark(created.id))
 
-    count = asyncio.run(manager.import_json(exported))
+    result = asyncio.run(manager.import_json(exported))
 
-    assert count == 1
+    assert result.imported == 1
     notes = [b.note for b in manager.list_bookmarks()]
-    assert notes == ["sunrise spot", "sunrise spot"]
+    assert notes == ["sunrise spot"]
 
 
 # ── #70 place / tag rename keeps color ───────────────────

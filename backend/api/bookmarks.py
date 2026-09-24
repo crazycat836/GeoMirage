@@ -13,7 +13,6 @@ from models.schemas import (
     Bookmark,
     BookmarkMoveRequest,
     BookmarkPlace,
-    BookmarkStore,
     BookmarkTag,
     BookmarkTagRequest,
     BookmarkUpdateRequest,
@@ -295,8 +294,8 @@ class BookmarkImportRequest(BaseModel):
 
     The axis items stay loosely-typed dicts because v0 bookmarks carry
     ``category_id`` (not ``place_id``) and only become valid v1 models
-    after the migration; full structural validation runs against
-    ``BookmarkStore`` in the handler below.
+    after the migration; each row is then validated on its own by
+    ``BookmarkManager.import_json`` so one bad row doesn't sink the file.
     """
     version: int = 0
     places: list[dict] = Field(default_factory=list, max_length=_MAX_IMPORT_AXIS_ITEMS)
@@ -310,23 +309,26 @@ async def import_bookmarks(req: BookmarkImportRequest):
     """Import a bookmark export (v0 or v1 shape).
 
     The body shape is enforced by :class:`BookmarkImportRequest`
-    (non-list axes / oversized payloads → 422 ``validation_failed``);
-    the inner items are validated here by running the same v0→v1
-    migration + ``BookmarkStore`` parse the manager uses, so a malformed
-    payload surfaces as 400 ``validation_failed`` instead of the old
-    silent success envelope ``{"imported": 0}``. A legitimately empty
-    import still returns ``{"imported": 0}`` with ``success: true``.
+    (non-list axes / oversized payloads → 422 ``validation_failed``).
+    Rows are then validated one by one: bad rows are skipped and reported
+    in ``invalid`` ({axis, index, field, reason}) while the rest import,
+    and rows already in the store (same name + coordinates) are counted in
+    ``skipped_duplicates`` instead of being added again. A payload the
+    v0→v1 migration cannot even read is a 400 ``validation_failed``.
     """
     raw = req.model_dump()
     try:
-        migrated, _ = migrate_v0_to_v1(dict(raw))
-        BookmarkStore(**migrated)
+        migrate_v0_to_v1(dict(raw))
     except Exception:
-        logger.warning("Bookmark import rejected: payload failed validation", exc_info=True)
+        logger.warning("Bookmark import rejected: payload failed migration", exc_info=True)
         raise http_err(
             400, ErrorCode.VALIDATION_FAILED,
             "Bookmark import payload failed validation",
         )
     bm = get_bookmark_manager()
-    count = await bm.import_json(json.dumps(raw))
-    return {"imported": count}
+    result = await bm.import_json(json.dumps(raw))
+    return {
+        "imported": result.imported,
+        "skipped_duplicates": result.skipped_duplicates,
+        "invalid": result.invalid,
+    }

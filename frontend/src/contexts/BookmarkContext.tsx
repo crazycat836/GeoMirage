@@ -5,7 +5,7 @@ import { useToastContext } from './ToastContext'
 import { useConnectEpoch } from './WebSocketContext'
 import { useT } from '../i18n'
 import { useSerializedReorder } from '../hooks/useSerializedReorder'
-import { validateBookmarkImport } from '../lib/bookmark_helpers'
+import { formatBookmarkImportSummary, validateBookmarkImport } from '../lib/bookmark_helpers'
 
 interface AddBmDialog {
   lat: number
@@ -102,11 +102,9 @@ export function BookmarkProvider({ children }: { children: React.ReactNode }) {
       validateBookmarkImport(data)
       const res = await api.importBookmarks(data)
       await bm.refresh()
-      // 0 imported is a no-op, not a failure — say so neutrally instead of
-      // "Imported 0 entries", which reads like something went wrong.
-      showToast(res.imported > 0
-        ? t('bm.import_success', { n: res.imported })
-        : t('bm.import_none'))
+      // Imported / skipped-duplicate / invalid counts plus which rows were
+      // bad; an empty file reads as a neutral "nothing imported".
+      showToast(formatBookmarkImportSummary(res, t))
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'unknown'
       showToast(t('bm.import_failed', { error: message }))
