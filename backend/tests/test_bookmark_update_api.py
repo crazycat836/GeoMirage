@@ -165,3 +165,47 @@ def test_note_survives_export_import(manager):
     assert count == 1
     notes = [b.note for b in manager.list_bookmarks()]
     assert notes == ["sunrise spot", "sunrise spot"]
+
+
+# ── #70 place / tag rename keeps color ───────────────────
+
+
+def _put_axis(kind: str, item_id: str, payload: dict):
+    req = bookmarks_api.BookmarkAxisUpdateRequest.model_validate(payload)
+    handler = bookmarks_api.update_place if kind == "place" else bookmarks_api.update_tag
+    return asyncio.run(handler(item_id, req))
+
+
+@pytest.mark.parametrize("kind", ["place", "tag"])
+def test_axis_rename_keeps_color(manager, kind):
+    create = manager.create_place if kind == "place" else manager.create_tag
+    item = asyncio.run(create(name="Scanner", color="#4A90E2"))
+
+    out = _put_axis(kind, item.id, {"name": "  Scanners  "})
+
+    assert out.name == "Scanners"
+    assert out.color == "#4A90E2"
+
+
+@pytest.mark.parametrize("kind", ["place", "tag"])
+def test_axis_color_only_keeps_name(manager, kind):
+    create = manager.create_place if kind == "place" else manager.create_tag
+    item = asyncio.run(create(name="Flower", color="#EC4899"))
+
+    out = _put_axis(kind, item.id, {"color": "#000000"})
+
+    assert out.name == "Flower"
+    assert out.color == "#000000"
+
+
+@pytest.mark.parametrize("kind", ["place", "tag"])
+def test_axis_blank_name_is_400(manager, kind):
+    from fastapi import HTTPException
+
+    create = manager.create_place if kind == "place" else manager.create_tag
+    item = asyncio.run(create(name="Flower", color="#EC4899"))
+
+    with pytest.raises(HTTPException) as exc_info:
+        _put_axis(kind, item.id, {"name": "   "})
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail["code"] == "invalid_name"

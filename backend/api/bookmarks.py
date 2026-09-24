@@ -186,9 +186,29 @@ async def create_place(place: BookmarkPlace):
     return await get_bookmark_manager().create_place(name=place.name, color=place.color)
 
 
+class BookmarkAxisUpdateRequest(BaseModel):
+    """Partial body for the place / tag PUT endpoints. Omitted fields keep
+    their stored value; a full ``BookmarkPlace`` / ``BookmarkTag`` body
+    would fill a missing ``color`` with the model default and repaint the
+    item on every rename. Same shape as ``_CategoryUpdateRequest`` in
+    ``api/route.py``."""
+    name: str | None = Field(default=None, max_length=128)
+    color: str | None = Field(default=None, max_length=32)
+
+
+def _clean_axis_name(name: str | None) -> str | None:
+    if name is None:
+        return None
+    name = name.strip()
+    if not name:
+        raise http_err(400, ErrorCode.INVALID_NAME, "Name must not be empty")
+    return name
+
+
 @router.put("/places/{place_id}", response_model=BookmarkPlace)
-async def update_place(place_id: str, place: BookmarkPlace):
-    updated = await get_bookmark_manager().update_place(place_id, name=place.name, color=place.color)
+async def update_place(place_id: str, req: BookmarkAxisUpdateRequest):
+    name = _clean_axis_name(req.name)
+    updated = await get_bookmark_manager().update_place(place_id, name=name, color=req.color)
     if not updated:
         raise http_err(404, ErrorCode.PLACE_NOT_FOUND, "Place not found")
     return updated
@@ -222,8 +242,9 @@ async def create_tag(tag: BookmarkTag):
 
 
 @router.put("/tags/{tag_id}", response_model=BookmarkTag)
-async def update_tag(tag_id: str, tag: BookmarkTag):
-    updated = await get_bookmark_manager().update_tag(tag_id, name=tag.name, color=tag.color)
+async def update_tag(tag_id: str, req: BookmarkAxisUpdateRequest):
+    name = _clean_axis_name(req.name)
+    updated = await get_bookmark_manager().update_tag(tag_id, name=name, color=req.color)
     if not updated:
         raise http_err(404, ErrorCode.TAG_NOT_FOUND, "Tag not found")
     return updated
