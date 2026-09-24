@@ -350,3 +350,45 @@ def test_usb_to_wifi_fallback_announces_tunnel_metadata(monkeypatch):
     assert [(d.udid, d.name, d.ios_version, d.connection_type) for d in listed] == [
         ("u1", "Gary iPhone", "26.5", "Network"),
     ]
+
+
+def test_usb_fallback_leaves_other_devices_tunnel_alone(monkeypatch):
+    """A on USB, B on the only WiFi tunnel. Unplugging A must not connect
+    through B's tunnel: B's connection record and engine stay as they
+    are and the fallback reports False."""
+    from context import ctx
+    from core.device_manager import DeviceManager, _ActiveConnection
+    from services import wifi_tunnel_service as svc
+
+    dm = DeviceManager()
+    conn_b = _ActiveConnection(
+        udid="B", lockdown=object(), ios_version="26.0",
+        connection_type="Network", via_tunnel=True,
+    )
+    dm._connections = {
+        "A": _ActiveConnection(udid="A", lockdown=object(), ios_version="26.0"),
+        "B": conn_b,
+    }
+    dm.connect_wifi_tunnel = AsyncMock()
+    engines = {"A": object(), "B": object()}
+    app_state = SimpleNamespace(
+        device_manager=dm,
+        terminate_engine=AsyncMock(),
+        create_engine_for_device=AsyncMock(),
+        simulation_engines=engines,
+    )
+    monkeypatch.setattr(ctx, "app_state", app_state, raising=False)
+    monkeypatch.setattr(svc, "tunnel", SimpleNamespace(
+        is_running=lambda: True,
+        transport_alive=lambda: True,
+        info={"rsd_address": "fd00::1", "rsd_port": 5555},
+    ))
+
+    ok = asyncio.run(svc.reconnect_usb_over_wifi("A"))
+
+    assert ok is False
+    assert dm.get_connection("B") is conn_b
+    assert "B" in engines
+    dm.connect_wifi_tunnel.assert_not_awaited()
+    for call in app_state.terminate_engine.await_args_list:
+        assert call.args[0] != "B"

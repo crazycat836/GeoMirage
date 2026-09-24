@@ -183,6 +183,16 @@ async def reconnect_usb_over_wifi(udid: str) -> bool:
 
     app_state = ctx.app_state
     dm = app_state.device_manager
+    # The tunnel serves one device. When another connected device already
+    # rides it, connecting through its RSD would reach that device, not
+    # *udid*, and tear down its live connection.
+    owners = [u for u in tunnel_udids(dm) if u != udid]
+    if owners:
+        logger.info(
+            "USB→WiFi fallback for %s skipped: tunnel belongs to %s",
+            udid, owners[0],
+        )
+        return False
     try:
         # Tear down the dead USB engine + transport before re-handshaking
         # over WiFi — mirrors the ordering in cleanup_wifi_connections.
