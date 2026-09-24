@@ -642,6 +642,8 @@ export const STRINGS = {
   'device.unknown_error': { zh: '未知錯誤', en: 'Unknown error' },
   'device.status_unsupported': { zh: '不支援', en: 'Unsupported' },
   'device.status_ready': { zh: '待命', en: 'Ready' },
+  'device.status_connected_secondary': { zh: '已連線（副）', en: 'Connected (secondary)' },
+  'device.status_not_connected': { zh: '未連線', en: 'Not connected' },
 
   // ── Settings (new) ─────────────────────────────
   'settings.language': { zh: '語言', en: 'Language' },

@@ -210,6 +210,19 @@ export function useDevice(subscribe?: WsSubscribe) {
     [connectedDevices, connectedDevice],
   )
 
+  // UDIDs seen connected at least once this session. Lets the device list
+  // tell a device the user disconnected from one never connected — both
+  // have is_connected=false and neither is in `lostUdids`.
+  const [everConnectedUdids, setEverConnectedUdids] = useState<ReadonlySet<string>>(() => new Set())
+  useEffect(() => {
+    setEverConnectedUdids((prev) => {
+      if (connectedDevices.every((d) => prev.has(d.udid))) return prev
+      const next = new Set(prev)
+      connectedDevices.forEach((d) => next.add(d.udid))
+      return next
+    })
+  }, [connectedDevices])
+
   // Stabilise the return object identity so consumers (DeviceContext
   // provider, App.tsx effect deps, useDeviceContext()) only re-run when
   // a listed value actually changes. Without this memo the Provider
@@ -221,13 +234,13 @@ export function useDevice(subscribe?: WsSubscribe) {
       devices, connectedDevice, scanning, scan, connect, disconnect, forget,
       startWifiTunnel, checkTunnelStatus, stopTunnel, tunnelStatus,
       connectedDevices, primaryDevice,
-      lostUdids, lastDisconnect, lastDeviceError,
+      lostUdids, everConnectedUdids, lastDisconnect, lastDeviceError,
     }),
     [
       devices, connectedDevice, scanning, scan, connect, disconnect, forget,
       startWifiTunnel, checkTunnelStatus, stopTunnel, tunnelStatus,
       connectedDevices, primaryDevice,
-      lostUdids, lastDisconnect, lastDeviceError,
+      lostUdids, everConnectedUdids, lastDisconnect, lastDeviceError,
     ],
   )
 }

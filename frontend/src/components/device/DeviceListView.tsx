@@ -3,13 +3,40 @@ import {
   Check, Loader2, Plus, Scan, Settings as SettingsIcon, XCircle,
 } from 'lucide-react'
 import { useDeviceContext } from '../../contexts/DeviceContext'
+import { useSimState } from '../../contexts/SimContext'
 import { useToastContext } from '../../contexts/ToastContext'
 import { useT } from '../../i18n'
-import { DeviceAvatar, DeviceInfoColumn, getDeviceMeta } from './deviceRowParts'
+import { DeviceAvatar, DeviceInfoColumn, getDeviceMeta, getDeviceRowStatus } from './deviceRowParts'
+import type { DeviceRowStatus } from './deviceRowParts'
+import type { StringKey } from '../../i18n'
 
 // How long the "Found N" / "Not found" pill stays visible after a scan
 // completes, before reverting to the default Scan label.
 const SCAN_RESULT_VISIBLE_MS = 2000
+
+const STATUS_LABEL: Record<DeviceRowStatus, StringKey> = {
+  unsupported: 'device.status_unsupported',
+  reconnecting: 'device.chip_state_reconnecting',
+  connected: 'device.chip_state_idle',
+  connected_secondary: 'device.status_connected_secondary',
+  lost: 'device.chip_state_disconnected',
+  not_connected: 'device.status_not_connected',
+  ready: 'device.status_ready',
+}
+
+// Text colour and dot colour per status. Connected rows (primary or
+// secondary) get the green glow; a degraded tunnel uses the same amber as
+// the MiniStatusBar pill.
+const IDLE_DOT = 'rgba(255,255,255,0.35)'
+const STATUS_COLOR: Record<DeviceRowStatus, { text: string; dot: string; glow: boolean }> = {
+  unsupported: { text: 'var(--color-error-text)', dot: 'var(--color-danger)', glow: false },
+  lost: { text: 'var(--color-error-text)', dot: 'var(--color-danger)', glow: false },
+  reconnecting: { text: 'var(--color-device-paused)', dot: 'var(--color-device-paused)', glow: false },
+  connected: { text: 'var(--color-success-text)', dot: 'var(--color-success-text)', glow: true },
+  connected_secondary: { text: 'var(--color-success-text)', dot: 'var(--color-success-text)', glow: true },
+  not_connected: { text: 'var(--color-text-3)', dot: IDLE_DOT, glow: false },
+  ready: { text: 'var(--color-text-3)', dot: IDLE_DOT, glow: false },
+}
 
 export interface DeviceListViewProps {
   // Called when a row is tapped and connect is initiated. The orchestrator
@@ -24,6 +51,7 @@ export interface DeviceListViewProps {
 export default function DeviceListView({ onClose, onManage, onAdd }: DeviceListViewProps) {
   const t = useT()
   const device = useDeviceContext()
+  const { runtimes } = useSimState()
   const { showToast } = useToastContext()
 
   const [scanning, setScanning] = useState(false)
@@ -71,7 +99,7 @@ export default function DeviceListView({ onClose, onManage, onAdd }: DeviceListV
     }
   }, [device])
 
-  const selectedUdid = device.connectedDevice?.udid
+  const selectedUdid = device.primaryDevice?.udid
   const activeCount = device.devices.filter((d) => d.is_connected).length
 
   return (
@@ -122,20 +150,16 @@ export default function DeviceListView({ onClose, onManage, onAdd }: DeviceListV
           device.devices.map((d, idx) => {
             const meta = getDeviceMeta(d, idx, selectedUdid)
             const { unsupported, isSelected } = meta
-            const isLost = device.lostUdids.has(d.udid) && !d.is_connected
             const isConnecting = connectingUdid === d.udid
-            const statusLabel = unsupported
-              ? t('device.status_unsupported')
-              : isLost
-                ? t('device.chip_state_disconnected')
-                : isSelected
-                  ? t('device.chip_state_idle')
-                  : t('device.status_ready')
-            const statusColor = unsupported || isLost
-              ? 'var(--color-error-text)'
-              : isSelected
-                ? 'var(--color-success-text)'
-                : 'var(--color-text-3)'
+            const status = getDeviceRowStatus({
+              isConnected: d.is_connected,
+              unsupported,
+              isPrimary: isSelected,
+              isLost: device.lostUdids.has(d.udid),
+              degraded: !!runtimes[d.udid]?.tunnelDegraded,
+              wasConnected: device.everConnectedUdids.has(d.udid),
+            })
+            const statusColor = STATUS_COLOR[status]
             return (
               <button
                 key={d.udid}
@@ -163,22 +187,18 @@ export default function DeviceListView({ onClose, onManage, onAdd }: DeviceListV
                 ) : (
                   <span
                     className="inline-flex items-center gap-1.5 font-mono text-[10px] shrink-0"
-                    style={{ color: statusColor }}
+                    style={{ color: statusColor.text }}
+                    data-status={status}
                   >
                     <span
                       className="w-1.5 h-1.5 rounded-full shrink-0"
                       style={{
-                        background: unsupported || isLost
-                          ? 'var(--color-danger)'
-                          : isSelected
-                            ? 'var(--color-success-text)'
-                            : 'rgba(255,255,255,0.35)',
-                        boxShadow: isSelected && !unsupported && !isLost
-                          ? '0 0 6px var(--color-success-text)'
-                          : 'none',
+                        background: statusColor.dot,
+                        boxShadow: statusColor.glow ? `0 0 6px ${statusColor.dot}` : 'none',
+                        animation: status === 'reconnecting' ? 'chip-pulse 1.6s ease-in-out infinite' : undefined,
                       }}
                     />
-                    {statusLabel}
+                    {t(STATUS_LABEL[status])}
                   </span>
                 )}
               </button>

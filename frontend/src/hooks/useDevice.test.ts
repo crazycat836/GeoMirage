@@ -68,3 +68,22 @@ describe('useDevice.scan', () => {
     expect(result.current.connectedDevice?.udid).toBe(A.udid)
   })
 })
+
+describe('useDevice.everConnectedUdids', () => {
+  it('remembers devices that were connected after they disconnect', async () => {
+    const B: DeviceInfo = { ...A, udid: 'udid-B' }
+    listDevices.mockResolvedValue([A, B])
+    const ws = fakeWs()
+    const { result } = renderHook(() => useDevice(ws.subscribe))
+    await act(async () => { await result.current.scan() })
+    expect(result.current.everConnectedUdids.size).toBe(0)
+
+    ws.send('device_connected', { udid: A.udid, name: A.name, ios_version: A.ios_version })
+    ws.send('device_disconnected', { udid: A.udid, udids: [A.udid], reason: 'user' })
+
+    expect(result.current.connectedDevices).toEqual([])
+    expect(result.current.lostUdids.has(A.udid)).toBe(false)
+    expect(result.current.everConnectedUdids.has(A.udid)).toBe(true)
+    expect(result.current.everConnectedUdids.has(B.udid)).toBe(false)
+  })
+})

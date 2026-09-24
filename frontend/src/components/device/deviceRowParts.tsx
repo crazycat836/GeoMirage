@@ -38,6 +38,40 @@ export function getDeviceMeta(
   return { major, unsupported, isNetwork, isUsb, isSelected, letter }
 }
 
+/** What the device list shows as a row's connection status. */
+export type DeviceRowStatus =
+  | 'unsupported'
+  | 'reconnecting'
+  | 'connected'
+  | 'connected_secondary'
+  | 'lost'
+  | 'not_connected'
+  | 'ready'
+
+/**
+ * Row status from the device's own `is_connected`, whether it is the
+ * primary device, and its tunnel health. A disconnected device is `lost`
+ * when the drop was involuntary, `not_connected` when it was connected
+ * earlier this session (e.g. the user disconnected it), and `ready` when
+ * it has never been connected.
+ */
+export function getDeviceRowStatus(s: {
+  isConnected: boolean
+  unsupported: boolean
+  isPrimary: boolean
+  isLost: boolean
+  degraded: boolean
+  wasConnected: boolean
+}): DeviceRowStatus {
+  if (s.unsupported) return 'unsupported'
+  if (s.isConnected) {
+    if (s.degraded) return 'reconnecting'
+    return s.isPrimary ? 'connected' : 'connected_secondary'
+  }
+  if (s.isLost) return 'lost'
+  return s.wasConnected ? 'not_connected' : 'ready'
+}
+
 interface DeviceAvatarProps {
   meta: DeviceMeta
 }
