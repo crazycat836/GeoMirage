@@ -48,11 +48,30 @@ function asDeviceLostCause(v: unknown): DeviceLostCause | undefined {
 export interface DeviceDisconnectedPayload {
   udid?: string
   udids?: readonly string[]
+  // The backend sends its transition cause under both `reason` and
+  // `cause` (connection_state._ws_observer). Deliberate values are
+  // listed in VOLUNTARY_DISCONNECT_REASONS; everything else is a loss.
   reason?: string
-  // Backend's classified root cause when reason is involuntary
-  // (device_lost / usb_unplugged / wifi tunnel cleanup). Absent on
-  // user-initiated disconnects ('user' / 'forget').
+  // Narrowed to the causes that have a dedicated toast; any other value
+  // (including the deliberate ones) parses to undefined.
   cause?: DeviceLostCause
+}
+
+/**
+ * Disconnect reasons the app or user caused on purpose: the explicit
+ * disconnect button, "forget device", an engine hard reset (reconnects
+ * right away) and the USB→WiFi fallback hop. None of these get a
+ * "device lost" toast or the red disconnected pill.
+ */
+const VOLUNTARY_DISCONNECT_REASONS: ReadonlySet<string> = new Set([
+  'user',
+  'forget',
+  'hard_reset',
+  'usb_removed_pre_wifi_fallback',
+])
+
+export function isInvoluntaryDisconnect(reason: string | undefined): boolean {
+  return reason == null || !VOLUNTARY_DISCONNECT_REASONS.has(reason)
 }
 
 export interface DeviceSnapshotEntry {

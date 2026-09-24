@@ -17,6 +17,7 @@
 
 import { useEffect, useRef } from 'react'
 import {
+  isInvoluntaryDisconnect,
   parseDeviceConnected,
   parseDeviceDisconnected,
   parseDeviceError,
@@ -84,8 +85,9 @@ export function useDeviceWs(
         // fall back to clearing all for legacy single-device disconnect events.
         const payload = parseDeviceDisconnected(msg.data)
         const udids: readonly string[] = payload.udids ?? (payload.udid ? [payload.udid] : [])
-        // user-initiated disconnects don't warrant a "lost" pill
-        const involuntary = payload.reason !== 'user'
+        // Deliberate disconnects (user, forget, hard reset, USB→WiFi
+        // fallback) don't warrant a "lost" pill or toast.
+        const involuntary = isInvoluntaryDisconnect(payload.reason)
         if (involuntary) {
           // Surface the cause one level up so App.tsx can pick a
           // root-cause-specific toast. Independent of `lostUdids` (which
