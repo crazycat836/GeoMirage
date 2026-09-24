@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter
+from pymobiledevice3.exceptions import DeviceNotFoundError, PairingError
 
 from api._deps import get_app_state, get_device_manager
 from api._errors import ErrorCode, http_err, ios_unsupported_error, max_devices_error
@@ -91,6 +92,15 @@ async def connect_device(udid: str):
         return {"status": "connected", "udid": udid}
     except UnsupportedIosVersionError as e:
         raise ios_unsupported_error(e.version)
+    except PairingError:
+        # Includes PasswordRequiredError (locked) and a declined / pending
+        # Trust prompt. dm.connect already logged it without a traceback.
+        raise http_err(
+            409, ErrorCode.PAIRING_REQUIRED,
+            "Unlock the iPhone and tap \"Trust This Computer\", then connect again",
+        )
+    except DeviceNotFoundError:
+        raise http_err(404, ErrorCode.NO_DEVICE, "Device is no longer attached")
     except Exception:
         logger.exception("Device connect failed", extra={"udid": udid})
         raise http_err(500, ErrorCode.CONNECT_FAILED, "Device connection failed; please retry")

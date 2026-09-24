@@ -17,6 +17,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
+from pymobiledevice3.exceptions import PairingError
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.tunnel_service import CoreDeviceTunnelProxy
 
@@ -70,19 +71,22 @@ async def connect_via_tunnel(
             rsd=rsd,
             usbmux_lockdown=lockdown,
         )
-    except Exception:
-        logger.exception(
-            "TCP tunnel failed for %s (iOS %s). "
-            "Ensure you are running as administrator.",
-            udid, ios_version,
-        )
+    except Exception as exc:
+        logger.exception("TCP tunnel failed for %s (iOS %s)", udid, ios_version)
         await _close_partial_tunnel(
             udid, rsd, tunnel_ctx if tunnel_entered else None, proxy,
         )
+        if isinstance(exc, PairingError):
+            # Locked phone / Trust not tapped: let the API layer map it to
+            # its own "unlock + tap Trust" error instead of a generic one.
+            raise
+        if isinstance(exc, PermissionError):
+            hint = "Please run GeoMirage as Administrator."
+        else:
+            hint = f"{type(exc).__name__}: {exc}"
         raise RuntimeError(
-            f"Could not establish device tunnel (iOS {ios_version}). "
-            f"Please run GeoMirage as Administrator."
-        )
+            f"Could not establish device tunnel (iOS {ios_version}). {hint}"
+        ) from exc
 
 
 async def _close_partial_tunnel(udid: str, rsd, tunnel_ctx, proxy) -> None:

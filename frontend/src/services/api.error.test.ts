@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { ApiError, saveRoute, teleport, getStatus } from './api'
+import { ApiError, saveRoute, teleport, getStatus, connectDevice } from './api'
 import { parseConflictExtras } from '../lib/bookmark_helpers'
 
 /**
@@ -126,4 +126,27 @@ describe('fetchWithRetry method gating (bug 2.5)', () => {
     await expect(getStatus()).resolves.toEqual({ running: false })
     expect(fetchMock).toHaveBeenCalledTimes(2)
   }, 10_000)
+})
+
+describe('connect pairing error surfaces the Trust hint', () => {
+  it('maps pairing_required to the unlock + Trust message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(envelopeResponse(409, 'Conflict', {
+      success: false,
+      data: null,
+      error: { code: 'pairing_required', message: 'Unlock the iPhone and tap Trust' },
+      meta: null,
+    })))
+
+    let caught: unknown
+    try {
+      await connectDevice('u1')
+    } catch (err) {
+      caught = err
+    }
+
+    expect(caught).toBeInstanceOf(ApiError)
+    expect((caught as ApiError).code).toBe('pairing_required')
+    // Localized text from err.pairing_required (either language) names the Trust prompt.
+    expect((caught as ApiError).message).toMatch(/信任這台電腦|Trust This Computer/)
+  })
 })

@@ -51,6 +51,7 @@ class ErrorCode(StrEnum):
     NO_DEVICE = "no_device"
     CONNECT_FAILED = "connect_failed"
     TRUST_FAILED = "trust_failed"
+    PAIRING_REQUIRED = "pairing_required"
     REMOTE_PAIR_FAILED = "remote_pair_failed"
     REPAIR_NEEDS_USB = "repair_needs_usb"
     USB_REQUIRED = "usb_required"

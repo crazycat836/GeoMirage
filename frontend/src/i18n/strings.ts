@@ -252,6 +252,7 @@ export const STRINGS = {
   'err.repair_needs_usb': { zh: '重新配對需要 USB, 請先用線連接 iPhone', en: 'Re-pair needs USB, please connect the iPhone first' },
   'err.usbmux_unavailable': { zh: '無法列出 USB 裝置,請確認驅動與 Apple Mobile Device Service 是否正常', en: 'Cannot list USB devices, check iTunes/Apple Mobile Device Service' },
   'err.trust_failed': { zh: 'USB 信任失敗, 請在 iPhone 上點「信任」後再試', en: 'USB trust failed, tap Trust on the iPhone and retry' },
+  'err.pairing_required': { zh: '請解鎖 iPhone 並點「信任這台電腦」，再重新連線', en: 'Unlock the iPhone and tap "Trust This Computer", then connect again' },
   'err.remote_pair_failed': { zh: 'RemotePairing 記錄重建失敗, 請以系統管理員身分重啟 GeoMirage', en: 'RemotePairing record rebuild failed, restart GeoMirage as Administrator' },
   'err.device_lost': { zh: '裝置連線中斷(USB 拔除或 Tunnel 死亡),請重新插上 USB 後再操作', en: 'Device connection lost (USB unplugged or tunnel died), please reconnect USB and try again' },
   'err.max_devices_reached': { zh: '已連接最多 2 台裝置', en: 'Maximum 2 devices connected' },
