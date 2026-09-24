@@ -33,6 +33,7 @@ from core.multi_stop import MultiStopNavigator
 from core.flower import FlowerHandler, TransferMode
 from core.random_walk import RandomWalkHandler
 from core.restore import RestoreHandler
+from core.movement_loop import RoutePushFailedError
 # Extracted cohesive units. Re-imported here (not just used internally) so
 # existing `from core.simulation_engine import SimulationSnapshot / EtaTracker`
 # call sites keep working.
@@ -282,7 +283,9 @@ class SimulationEngine:
         the frontend never learns the tunnel died. RouteUnavailableError is
         re-raised for the same reason: spawn() broadcasts it as a
         ``device_error`` toast, so the user learns WHY the run aborted
-        instead of watching it silently snap back to idle."""
+        instead of watching it silently snap back to idle.
+        RoutePushFailedError follows the same path: the device stopped
+        accepting positions, so the run ends with an error, not arrival."""
         # A real simulation supersedes idle auto-jitter — stop it so the
         # two don't fight over position pushes.
         self._cancel_jitter()
@@ -298,7 +301,7 @@ class SimulationEngine:
             await task
         except asyncio.CancelledError:
             logger.info("%s cancelled", label)
-        except (DeviceLostError, RouteUnavailableError) as exc:
+        except (DeviceLostError, RouteUnavailableError, RoutePushFailedError) as exc:
             logger.warning("%s aborted: %s", label, exc)
             passthrough = exc
         except Exception as exc:

@@ -16,6 +16,7 @@ from core.handler_common import (
     pause_with_countdown,
     random_pause_seconds,
 )
+from core.movement_loop import RoutePushFailedError
 from services.interpolator import RouteInterpolator
 from config import (
     DEFAULT_PAUSE_ENABLED,
@@ -240,7 +241,9 @@ class RandomWalkHandler:
             engine._user_waypoint_next = 0
             await engine._move_along_route(coords, speed_profile)
             return _LEG_OK
-        except asyncio.CancelledError:
+        except (asyncio.CancelledError, RoutePushFailedError):
+            # A leg the device refused to follow ends the walk with an
+            # error rather than counting as one more retryable failure.
             raise
         except (ConnectionTerminatedError, ConnectionError, OSError) as exc:
             # Full context (backoff, retry counts) logged inside

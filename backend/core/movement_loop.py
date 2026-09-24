@@ -47,19 +47,29 @@ WP_NEAR_M = 60.0       # got close enough to plausibly count as visiting
 WP_RECEDE_M = 12.0     # how far past the running min before declaring passed
 
 
+class RoutePushFailedError(RuntimeError):
+    """The device kept rejecting position pushes, so the route was
+    abandoned part-way. Distinct from a normal return so handlers never
+    report an interrupted route as arrived; ``_run_handler`` re-raises it
+    for the API layer to show as a ``device_error``."""
+
+
 async def _push_position_with_retry(
     engine: "SimulationEngine", lat: float, lng: float,
-) -> bool:
+) -> None:
     """Push a single (lat, lng) to the device with linear-backoff retries.
 
-    Returns True if the push eventually succeeded. ``DeviceLostError`` and
-    ``CancelledError`` propagate so callers can stop the route cleanly.
+    Raises :class:`RoutePushFailedError` when the push never succeeds.
+    ``DeviceLostError`` and ``CancelledError`` propagate unchanged so
+    callers can stop the route cleanly.
     """
+    last_exc: Exception | None = None
     for attempt in range(_PUSH_RETRY_ATTEMPTS):
         try:
             await engine._set_position(lat, lng)
-            return True
+            return
         except (ConnectionError, OSError) as exc:
+            last_exc = exc
             logger.warning(
                 "position push failed (attempt %d/%d): %s",
                 attempt + 1, _PUSH_RETRY_ATTEMPTS, exc,
@@ -72,10 +82,14 @@ async def _push_position_with_retry(
             # device_disconnected. Silently swallowing here left
             # the frontend showing "connected" after a lost tunnel.
             raise
-        except Exception:
+        except Exception as exc:
             logger.exception("Unexpected error pushing position")
-            return False
-    return False
+            raise RoutePushFailedError(
+                f"Could not update the device location: {exc}"
+            ) from exc
+    raise RoutePushFailedError(
+        f"Could not update the device location after {_PUSH_RETRY_ATTEMPTS} attempts: {last_exc}"
+    ) from last_exc
 
 
 async def _emit_position_update(
@@ -227,6 +241,7 @@ async def move_along_route(
     # across consecutive move_along_route calls.
     user_wps = list(engine._user_waypoints)
     wp_min_dist = float("inf")
+    push_error: RoutePushFailedError | None = None
     if user_wps:
         await engine._emit("waypoint_progress", {
             "current_index": max(engine._user_waypoint_next - 1, 0),
@@ -294,8 +309,11 @@ async def move_along_route(
             # Add GPS jitter for realism
             jittered_lat, jittered_lng = RouteInterpolator.add_jitter(lat, lng, jitter)
 
-            if not await _push_position_with_retry(engine, jittered_lat, jittered_lng):
+            try:
+                await _push_position_with_retry(engine, jittered_lat, jittered_lng)
+            except RoutePushFailedError as exc:
                 logger.error("Giving up on this route after repeated push failures")
+                push_error = exc
                 break
 
             engine.distance_traveled += step_dist
@@ -350,6 +368,7 @@ async def move_along_route(
     # it stuck in "approaching" forever.
     if (
         user_wps
+        and push_error is None
         and not engine._stop_event.is_set()
         and engine._user_waypoint_next < len(user_wps)
     ):
@@ -367,3 +386,6 @@ async def move_along_route(
     engine._pending_speed_profile = None
     engine._active_route_coords = []
     engine._current_speed_mps = 0.0
+
+    if push_error is not None:
+        raise push_error

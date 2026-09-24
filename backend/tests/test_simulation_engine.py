@@ -680,3 +680,63 @@ def test_joystick_stop_leaves_another_modes_pause_alone():
         assert recorder.states() == ["paused"]
 
     asyncio.run(scenario())
+
+
+# ── Position push failure is an abort, not an arrival ─────────────────────
+
+def test_push_failure_aborts_navigate_without_arrival():
+    from core.movement_loop import RoutePushFailedError
+    from core.simulation_engine import SimulationEngine
+    from models.schemas import Coordinate, MovementMode, SimulationState
+
+    async def scenario():
+        service = _FailingLocationService(fail_from=2, exc=ValueError("device said no"))
+        recorder = EventRecorder()
+        engine = SimulationEngine(service, event_callback=recorder)
+        engine.current_position = Coordinate(lat=25.0, lng=121.5)
+
+        with pytest.raises(RoutePushFailedError):
+            await engine.navigate(
+                Coordinate(lat=25.0, lng=121.5002), MovementMode.WALKING,
+                speed_kmh=72.0, straight_line=True,
+            )
+
+        event_types = [t for t, _ in recorder.events]
+        assert "navigation_complete" not in event_types
+        # The destination was never marked reached.
+        wps = [d for t, d in recorder.events if t == "waypoint_progress"]
+        assert all(w["current_index"] == 0 for w in wps)
+        assert engine.state == SimulationState.IDLE
+        assert recorder.states()[-1] == "idle"
+
+    asyncio.run(scenario())
+
+
+def test_push_failure_aborts_multi_stop_before_the_next_leg():
+    from core.movement_loop import RoutePushFailedError
+    from core.simulation_engine import SimulationEngine
+    from models.schemas import Coordinate, MovementMode, SimulationState
+
+    async def scenario():
+        service = _FailingLocationService(fail_from=2, exc=ValueError("device said no"))
+        recorder = EventRecorder()
+        engine = SimulationEngine(service, event_callback=recorder)
+        engine.current_position = Coordinate(lat=25.0, lng=121.5)
+        wps = [
+            Coordinate(lat=25.0, lng=121.5),
+            Coordinate(lat=25.0, lng=121.50002),
+            Coordinate(lat=25.0, lng=121.50004),
+        ]
+
+        with pytest.raises(RoutePushFailedError):
+            await engine.multi_stop(
+                wps, MovementMode.WALKING, speed_kmh=72.0,
+                pause_enabled=False, straight_line=True,
+            )
+
+        event_types = [t for t, _ in recorder.events]
+        assert "stop_reached" not in event_types
+        assert "multi_stop_complete" not in event_types
+        assert engine.state == SimulationState.IDLE
+
+    asyncio.run(scenario())
