@@ -171,7 +171,10 @@ def _replan_for_speed_swap(
     syncs ``_active_route_coords`` so a subsequent ``apply_speed`` slices
     against the right list.
     """
-    cutoff_seg = timed_points[cutoff_idx].get("seg_idx", 0)
+    # The device sits at the last *pushed* point, so the remaining route
+    # starts after that point's segment. Slicing by the first unpushed
+    # point's segment would skip a vertex whenever the two straddle one.
+    cutoff_seg = timed_points[max(cutoff_idx - 1, 0)].get("seg_idx", 0)
     tail_waypoints = engine._active_route_coords[cutoff_seg + 1:]
     cur_pos = engine.current_position
     if cur_pos is not None and tail_waypoints:
@@ -242,6 +245,9 @@ async def move_along_route(
     user_wps = list(engine._user_waypoints)
     wp_min_dist = float("inf")
     push_error: RoutePushFailedError | None = None
+    # Distance covered by earlier plans of this route (before a speed
+    # swap re-planned the rest), so progress keeps counting from there.
+    distance_offset = 0.0
     if user_wps:
         await engine._emit("waypoint_progress", {
             "current_index": max(engine._user_waypoint_next - 1, 0),
@@ -264,7 +270,8 @@ async def move_along_route(
                 planned_coords[i + 1].lat, planned_coords[i + 1].lng,
             )
 
-        engine.eta_tracker.start(total_distance, speed_mps)
+        engine.eta_tracker.start(distance_offset + total_distance, speed_mps)
+        engine.eta_tracker.update(distance_offset)
         engine.distance_remaining = total_distance
 
         timed_points = RouteInterpolator.interpolate(
@@ -333,8 +340,8 @@ async def move_along_route(
                 lng=jittered_lng,
                 bearing=bearing,
                 speed_mps=speed_mps,
-                accumulated_distance=accumulated_distance,
-                total_distance=total_distance,
+                accumulated_distance=distance_offset + accumulated_distance,
+                total_distance=distance_offset + total_distance,
                 idx=idx,
             )
 
@@ -373,6 +380,7 @@ async def move_along_route(
             planned_coords = _replan_for_speed_swap(
                 engine, timed_points, reinterpolate_from_point,
             )
+            distance_offset += accumulated_distance
             if planned_coords:
                 continue  # outer while — build a fresh plan
         break  # outer while: done (stopped, completed, or push-failure)

@@ -435,3 +435,51 @@ def test_resume_after_pause_does_not_burst_to_catch_up():
     assert gaps
     # Every tick after the resume keeps (roughly) the 0.1 s cadence.
     assert min(gaps) > 0.07
+
+
+# ── (f) speed swap keeps progress and corners ───────────────────────────
+
+
+def test_speed_swap_keeps_progress_from_going_backwards():
+    async def scenario():
+        engine, events, _fake = _make_engine()
+        engine.state = SimulationState.NAVIGATING
+        coords = _lat_route([0.0, 30.0, 60.0, 90.0])
+        task = asyncio.create_task(move_along_route(engine, coords, _profile(300.0)))
+        await _wait_until(lambda: len(_position_updates(events)) >= 10)
+        assert await engine.apply_speed(_profile(600.0)) is True
+        await asyncio.wait_for(task, timeout=_WAIT_TIMEOUT_S)
+        return events
+
+    events = asyncio.run(scenario())
+
+    updates = _position_updates(events)
+    assert {u["speed_mps"] for u in updates} == {300.0, 600.0}
+    progress = [u["progress"] for u in updates]
+    assert progress == sorted(progress)
+    assert progress[-1] == 1.0
+
+
+def test_speed_swap_replan_keeps_the_corner_after_the_last_pushed_point():
+    from core.movement_loop import _replan_for_speed_swap
+
+    async def scenario():
+        engine, _events, _fake = _make_engine()
+        a = _offset_coord(0.0, 0.0)
+        corner = _offset_coord(30.0, 0.0)
+        end = _offset_coord(30.0, 30.0)
+        engine._active_route_coords = [a, corner, end]
+        # Last pushed point sits on segment 0 (before the corner); the
+        # first unpushed one is already past it on segment 1.
+        pushed = _offset_coord(28.0, 0.0)
+        engine.current_position = pushed
+        timed_points = [
+            {"lat": a.lat, "lng": a.lng, "seg_idx": 0},
+            {"lat": pushed.lat, "lng": pushed.lng, "seg_idx": 0},
+            {"lat": corner.lat, "lng": corner.lng + 1e-5, "seg_idx": 1},
+        ]
+        engine._pending_speed_profile = _profile(600.0)
+        return _replan_for_speed_swap(engine, timed_points, 2), pushed, corner, end
+
+    planned, pushed, corner, end = asyncio.run(scenario())
+    assert planned == [pushed, corner, end]
