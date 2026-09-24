@@ -12,6 +12,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 import auth
 from services.json_store import StorePersistError
@@ -398,11 +399,15 @@ class _TokenAuthMiddleware(BaseHTTPMiddleware):
     GEOMIRAGE_DEV_NOAUTH=1 is set, or a WebSocket upgrade is being
     negotiated (auth is then enforced via the first WS frame — see
     api/websocket.py), the middleware short-circuits and lets the request
-    through.
+    through. With auth disabled, a request carrying a foreign ``Origin``
+    is still rejected so a web page can't drive the API with a cross-site
+    form POST.
     """
 
     async def dispatch(self, request: Request, call_next):
         if auth._is_auth_disabled():
+            if not auth.is_origin_allowed(request.headers.get("origin")):
+                return unauthorized_response()
             return await call_next(request)
         path = request.url.path
         if path in auth._AUTH_EXEMPT_PATHS:
@@ -438,12 +443,7 @@ app.add_middleware(
     # browser tab on the user's machine issue requests through the
     # user-agent, which the bearer-token middleware can't catch on
     # pre-flight. Lock this down explicitly.
-    allow_origins=[
-        "app://.",
-        "file://",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=list(auth.ALLOWED_ORIGINS),
     allow_credentials=False,
     allow_methods=["*"],
     # Only the headers the renderer actually sends. The bearer token rides
@@ -454,6 +454,11 @@ app.add_middleware(
     # the cross-origin preflight in Vite dev (renderer:5173 → backend:8777).
     allow_headers=["X-GPS-Token", "Content-Type", "X-Google-Key"],
 )
+
+# Outermost layer: reject any Host other than loopback (400) before CORS or
+# auth run. Blocks DNS rebinding, which would otherwise let a foreign site
+# reach the API as same-origin — fatal when GEOMIRAGE_DEV_NOAUTH=1.
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(auth.ALLOWED_HOSTS))
 
 # Register routers
 from api.device import router as device_router

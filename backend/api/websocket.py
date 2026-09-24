@@ -35,6 +35,8 @@ logger = logging.getLogger(__name__)
 # generic disconnect.
 _WS_AUTH_FAIL_CODE = 4001
 _WS_AUTH_TIMEOUT_SECONDS = 5.0
+# Standard "policy violation" close, used to refuse a foreign Origin.
+_WS_POLICY_VIOLATION_CODE = 1008
 
 
 async def _send_initial_state(ws: WebSocket) -> None:
@@ -154,6 +156,14 @@ async def _require_auth_frame(ws: WebSocket) -> bool:
 
 @router.websocket("/ws/status")
 async def websocket_endpoint(ws: WebSocket):
+    # WebSockets are not covered by CORS. With auth disabled (dev mode) the
+    # Origin check is the only thing stopping any open web page from reading
+    # position / device events and sending joystick frames, so refuse
+    # foreign origins before accepting (the client sees an HTTP 403).
+    if auth._is_auth_disabled() and not auth.is_origin_allowed(ws.headers.get("origin")):
+        logger.warning("Rejected WebSocket from origin %r", ws.headers.get("origin"))
+        await ws.close(code=_WS_POLICY_VIOLATION_CODE)
+        return
     await ws.accept()
     if not await _require_auth_frame(ws):
         return

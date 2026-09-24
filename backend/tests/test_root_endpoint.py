@@ -28,14 +28,14 @@ _POSITION_FIELDS = ("initial_position", "position", "lat", "lng", "latitude", "l
 
 def test_root_is_reachable_without_token():
     """Health-check contract: 200 without X-GPS-Token (auth-exempt)."""
-    client = TestClient(main.app)
+    client = TestClient(main.app, base_url="http://127.0.0.1:8777")
     resp = client.get("/")
     assert resp.status_code == 200
 
 
 def test_root_carries_no_position_fields():
     """The unauthenticated payload must be name/version/status only."""
-    client = TestClient(main.app)
+    client = TestClient(main.app, base_url="http://127.0.0.1:8777")
     payload = client.get("/").json()
 
     # Envelope-wrapped by EnvelopeJSONResponse.

@@ -46,3 +46,29 @@ _AUTH_EXEMPT_PATHS = frozenset({
     "/redoc",
     "/docs/oauth2-redirect",
 })
+
+
+# Browser origins the app itself runs under: the packaged Electron renderer
+# (file:// / app://.) and the Vite dev server. Shared by CORSMiddleware and
+# the dev-mode Origin checks on HTTP and WebSocket requests.
+ALLOWED_ORIGINS: tuple[str, ...] = (
+    "app://.",
+    "file://",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+)
+
+# Host header values the backend answers to. It only binds 127.0.0.1, so
+# any other Host means DNS rebinding (a foreign site resolving its own name
+# to loopback) and is rejected whether or not token auth is on.
+ALLOWED_HOSTS: tuple[str, ...] = ("127.0.0.1", "localhost")
+
+
+def is_origin_allowed(origin: str | None) -> bool:
+    """True when *origin* is absent or one of the app's own origins.
+
+    A missing Origin means a non-browser client (curl, the Electron main
+    process); a web page cannot suppress the header, so it can't use that
+    to slip through.
+    """
+    return origin is None or origin in ALLOWED_ORIGINS

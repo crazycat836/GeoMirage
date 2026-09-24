@@ -70,6 +70,7 @@ def _clean_state(monkeypatch) -> Iterator[None]:
 def _make_scripted_ws(frames: list[str]) -> AsyncMock:
     """A WebSocket double that replays *frames* then disconnects."""
     ws = AsyncMock()
+    ws.headers = {}  # no Origin: non-browser client, passes the dev-mode check
     ws.send_text = AsyncMock()
     queue = list(frames)
 
