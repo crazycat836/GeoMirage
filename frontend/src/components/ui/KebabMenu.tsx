@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { createPortal } from 'react-dom'
 import { MoreVertical } from 'lucide-react'
 import { ICON_SIZE } from '../../lib/icons'
+import { focusFirstMenuItem, handleMenuArrowKeys } from '../../lib/menu-keys'
 
 type Side = 'top' | 'bottom'
 type Align = 'start' | 'end'
@@ -96,34 +97,11 @@ export default function KebabMenu({
   // Focus first actionable item when opening.
   useEffect(() => {
     if (!open) return
-    const t = setTimeout(() => {
-      const first = menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]:not([disabled])')
-      first?.focus()
-    }, 0)
+    const t = setTimeout(() => focusFirstMenuItem(menuRef.current), 0)
     return () => clearTimeout(t)
   }, [open])
 
-  const onMenuKey = (e: React.KeyboardEvent) => {
-    const buttons = Array.from(
-      menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not([disabled])') ?? [],
-    )
-    if (buttons.length === 0) return
-    const active = document.activeElement as HTMLButtonElement | null
-    const idx = active ? buttons.indexOf(active) : -1
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      buttons[(idx + 1) % buttons.length]?.focus()
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      buttons[(idx - 1 + buttons.length) % buttons.length]?.focus()
-    } else if (e.key === 'Home') {
-      e.preventDefault()
-      buttons[0]?.focus()
-    } else if (e.key === 'End') {
-      e.preventDefault()
-      buttons[buttons.length - 1]?.focus()
-    }
-  }
+  const onMenuKey = (e: React.KeyboardEvent) => handleMenuArrowKeys(e, menuRef.current)
 
   const toggle = useCallback((e: React.MouseEvent<HTMLElement>) => {
     e.preventDefault()

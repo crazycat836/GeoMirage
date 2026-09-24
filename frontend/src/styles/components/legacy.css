@@ -20,12 +20,14 @@
 
 /* ── Context menu ───────────────────────────────────────────── */
 .context-menu {
+  position: fixed;
   background: var(--color-surface-2);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
   padding: 4px 0;
   min-width: 180px;
+  max-width: 360px;
   z-index: var(--z-dropdown);
 }
 .context-menu-item {

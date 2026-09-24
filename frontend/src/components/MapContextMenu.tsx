@@ -3,6 +3,8 @@ import { useT } from '../i18n';
 import { reverseGeocode } from '../services/api';
 import { copyToClipboard } from '../lib/clipboard';
 import { formatCoord } from '../lib/format';
+import { focusFirstMenuItem, handleMenuArrowKeys } from '../lib/menu-keys';
+import { useModalDismiss } from '../hooks/useModalDismiss';
 
 export interface ContextMenuState {
   visible: boolean;
@@ -104,6 +106,17 @@ function MapContextMenu({
     };
   }, [state.visible, onClose]);
 
+  // Esc closes the menu through the shared layer stack, so it only closes
+  // this menu (not a surface underneath) and focus returns to where it was.
+  useModalDismiss({ open: state.visible, onDismiss: onClose });
+
+  // Move focus into the menu once it has been measured and made visible
+  // (a `visibility: hidden` element can't take focus).
+  const menuShown = menuPos != null;
+  useEffect(() => {
+    if (menuShown) focusFirstMenuItem(menuRef.current);
+  }, [menuShown]);
+
   // Clamp the context menu to the viewport. Running in useLayoutEffect lets
   // us measure the real DOM before the browser paints, so the menu doesn't
   // visibly flash in the clipped position before jumping back in-bounds.
@@ -159,8 +172,10 @@ function MapContextMenu({
       data-fc="map.context-menu"
       ref={menuRef}
       className="context-menu anim-scale-in-tl"
+      role="menu"
+      aria-label={formatCoord(state)}
+      onKeyDown={(e) => handleMenuArrowKeys(e, menuRef.current)}
       style={{
-        position: 'fixed',
         // On first render we haven't measured yet; hide the menu so the
         // user doesn't see it flash at an out-of-bounds location before
         // useLayoutEffect clamps it. Once measured, render at clamped
@@ -168,14 +183,6 @@ function MapContextMenu({
         left: menuPos?.left ?? state.x,
         top: menuPos?.top ?? state.y,
         visibility: menuPos ? 'visible' : 'hidden',
-        zIndex: 'var(--z-dropdown)',
-        background: 'var(--color-surface-1)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 'var(--radius-lg)',
-        padding: '4px 0',
-        boxShadow: 'var(--shadow-lg)',
-        minWidth: 180,
-        maxWidth: 360,
       }}
       onClick={(e) => e.stopPropagation()}
     >
@@ -185,6 +192,8 @@ function MapContextMenu({
             choosing teleport / navigate. */}
       <button
         type="button"
+        role="menuitem"
+        className="font-mono"
         onClick={handleWhatsHere}
         disabled={whatsHere.loading}
         style={{
@@ -194,7 +203,6 @@ function MapContextMenu({
           padding: '8px 16px 6px',
           color: 'var(--color-accent-strong)',
           fontSize: 12,
-          fontFamily: 'monospace',
           display: 'flex',
           alignItems: 'center',
           gap: 8,
@@ -227,12 +235,14 @@ function MapContextMenu({
           )}
         </div>
       )}
-      <div style={{ height: 1, background: 'var(--color-border)', margin: '2px 0 4px' }} />
+      <div role="separator" style={{ height: 1, background: 'var(--color-border)', margin: '2px 0 4px' }} />
 
       {/* 2 + 3. Teleport / Navigate (device-gated). */}
       {deviceConnected ? (
         <>
-          <div
+          <button
+            type="button"
+            role="menuitem"
             className="context-menu-item"
             style={contextMenuItemStyle}
             onClick={() => {
@@ -248,8 +258,10 @@ function MapContextMenu({
               <line x1="18" y1="12" x2="22" y2="12" />
             </svg>
             {t('map.teleport_here')}
-          </div>
-          <div
+          </button>
+          <button
+            type="button"
+            role="menuitem"
             className="context-menu-item"
             style={contextMenuItemStyle}
             onClick={() => {
@@ -261,12 +273,15 @@ function MapContextMenu({
               <polygon points="3,11 22,2 13,21 11,13" />
             </svg>
             {t('map.navigate_here')}
-          </div>
+          </button>
         </>
       ) : (
-        <div
+        <button
+          type="button"
+          role="menuitem"
           className="context-menu-item"
           style={{ ...contextMenuItemStyle, color: 'var(--color-danger-text)', cursor: onOpenDevices ? 'pointer' : 'default' }}
+          disabled={!onOpenDevices}
           onClick={() => {
             if (!onOpenDevices) return;
             onOpenDevices();
@@ -278,11 +293,13 @@ function MapContextMenu({
             <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
           </svg>
           {t('map.device_disconnected')}
-        </div>
+        </button>
       )}
 
       {/* 4. Copy coordinates to clipboard. */}
-      <div
+      <button
+        type="button"
+        role="menuitem"
         className="context-menu-item"
         style={contextMenuItemStyle}
         onClick={async () => {
@@ -297,10 +314,12 @@ function MapContextMenu({
           <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
         </svg>
         {t('map.copy_coords')}
-      </div>
+      </button>
 
       {/* 5. Add to bookmarks. */}
-      <div
+      <button
+        type="button"
+        role="menuitem"
         className="context-menu-item"
         style={contextMenuItemStyle}
         onClick={() => {
@@ -312,16 +331,18 @@ function MapContextMenu({
           <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />
         </svg>
         {t('map.add_bookmark')}
-      </div>
+      </button>
 
       {/* 6. Route actions — add waypoint (route modes) + save the current
             route. Grouped under one separator; the separator only renders
             when at least one of the two is available. */}
       {((showWaypointOption && onAddWaypoint) || (showSaveRouteOption && onSaveRoute)) && (
-        <div style={{ height: 1, background: 'var(--color-border-strong)', margin: '4px 0' }} />
+        <div role="separator" style={{ height: 1, background: 'var(--color-border-strong)', margin: '4px 0' }} />
       )}
       {showWaypointOption && onAddWaypoint && (
-        <div
+        <button
+          type="button"
+          role="menuitem"
           className="context-menu-item"
           style={contextMenuItemStyle}
           onClick={() => {
@@ -337,10 +358,12 @@ function MapContextMenu({
             <line x1="23" y1="12" x2="19" y2="12" />
           </svg>
           {t('map.add_waypoint')}
-        </div>
+        </button>
       )}
       {showSaveRouteOption && onSaveRoute && (
-        <div
+        <button
+          type="button"
+          role="menuitem"
           className="context-menu-item"
           style={contextMenuItemStyle}
           onClick={() => {
@@ -354,7 +377,7 @@ function MapContextMenu({
             <circle cx="18" cy="5" r="3" />
           </svg>
           {t('route.quick_save')}
-        </div>
+        </button>
       )}
     </div>
   );
