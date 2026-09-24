@@ -91,10 +91,21 @@ export function BookmarkProvider({ children }: { children: React.ReactNode }) {
     }
   }, [bm.refresh, showToast, t])
 
+  // Toast on persist failure, then rethrow so useSerializedReorder's devLog
+  // + refresh (rollback) still run — same convention as route reorders.
+  const postBookmarksReorder = useCallback(async (orderedIds: string[]) => {
+    try {
+      await api.reorderBookmarks(orderedIds)
+    } catch (err: unknown) {
+      showToast(t('toast.reorder_failed'))
+      throw err
+    }
+  }, [showToast, t])
+
   // Stable handler; latest bm.refresh is picked up via the hook's internal
   // ref. See useSerializedReorder for the in-flight/queue rationale.
   const handleBookmarksReorder = useSerializedReorder(
-    api.reorderBookmarks, bm.refresh, 'reorderBookmarks failed',
+    postBookmarksReorder, bm.refresh, 'reorderBookmarks failed',
   )
 
   const handleBookmarkExport = useCallback(async () => {
