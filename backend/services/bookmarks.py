@@ -334,6 +334,7 @@ class BookmarkManager(JsonModelStore[BookmarkStore]):
         tags: list[str] | None = None,
         country_code: str = "",
         country: str = "",
+        note: str = "",
     ) -> Bookmark:
         async with self._lock:
             if self._find_place(place_id) is None:
@@ -360,6 +361,7 @@ class BookmarkManager(JsonModelStore[BookmarkStore]):
                 last_used_at=now,
                 country_code=country_code,
                 country=country,
+                note=note,
             )
             self.store.bookmarks.append(bm)
             await self._persist()
@@ -373,7 +375,7 @@ class BookmarkManager(JsonModelStore[BookmarkStore]):
 
             allowed = {
                 "name", "lat", "lng", "address", "place_id", "tags",
-                "last_used_at", "country_code", "country",
+                "last_used_at", "country_code", "country", "note",
             }
             updates: dict[str, object] = {}
             for key, value in kwargs.items():

@@ -348,6 +348,8 @@ class Bookmark(BaseModel):
     # existing JSON files without these fields load unchanged.
     country_code: str = ""
     country: str = ""
+    # Free-form user note from the edit dialog.
+    note: str = Field(default="", max_length=2000)
     # Insertion-order fallback used by the drag-reorder UI. Stored
     # explicitly so two bookmarks created milliseconds apart don't drift
     # when the frontend sorts by sort_order. Defaults to 0 on legacy
@@ -355,6 +357,22 @@ class Bookmark(BaseModel):
     # at which point the reorder endpoint rewrites all neighbouring
     # sort_order values.
     sort_order: int = 0
+
+
+class BookmarkUpdateRequest(BaseModel):
+    """Partial body for ``PUT /api/bookmarks/{id}``. Every field is
+    optional; ``None`` (or an omitted key) leaves the stored value alone,
+    so an inline rename can send just ``{name}`` and "move to place" just
+    ``{place_id}``."""
+    name: str | None = Field(default=None, max_length=512)
+    lat: Latitude | None = None
+    lng: Longitude | None = None
+    address: str | None = Field(default=None, max_length=1024)
+    place_id: str | None = None
+    tags: list[str] | None = Field(default=None, max_length=64)
+    country_code: str | None = None
+    country: str | None = None
+    note: str | None = Field(default=None, max_length=2000)
 
 
 class BookmarkMoveRequest(BaseModel):

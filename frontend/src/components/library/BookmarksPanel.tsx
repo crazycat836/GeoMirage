@@ -221,7 +221,9 @@ export default function BookmarksPanel({ onBookmarkClick, currentPosition }: Boo
     lng: values.lng,
     place_id: values.placeId,
     tags: values.tagIds,
-    note: values.note,
+    // Send '' rather than omitting the key so clearing the note in the
+    // dialog clears it on the backend (PUT is a partial update).
+    note: values.note ?? '',
   })
 
   const handleCreate = useCallback(
@@ -351,12 +353,17 @@ export default function BookmarksPanel({ onBookmarkClick, currentPosition }: Boo
           label: displayPlace(place.name),
           icon: <FolderInput width={ICON_SIZE.sm} height={ICON_SIZE.sm} />,
           colorDot: getPlaceColor(place.name),
-          onSelect: () => void bm.updateBookmark(b.id, { place_id: place.id }),
+          onSelect: () => {
+            bm.updateBookmark(b.id, { place_id: place.id }).catch((err: unknown) => {
+              const message = err instanceof Error ? err.message : ''
+              showToast(t('toast.save_failed', { msg: message }))
+            })
+          },
         })
       })
     }
     return items
-  }, [t, places, bm, handleCopy, confirmDeleteOne, displayPlace])
+  }, [t, places, bm, handleCopy, confirmDeleteOne, displayPlace, showToast])
 
   // ─── Render ─────────────────────────────────────────
   const searching = search.trim().length > 0

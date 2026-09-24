@@ -16,6 +16,7 @@ from models.schemas import (
     BookmarkStore,
     BookmarkTag,
     BookmarkTagRequest,
+    BookmarkUpdateRequest,
     ReorderRequest,
 )
 from services.bookmarks_migration import migrate_v0_to_v1
@@ -85,24 +86,25 @@ async def create_bookmark(bookmark: Bookmark):
         tags=list(bookmark.tags),
         country_code=country_code,
         country=country,
+        note=bookmark.note,
     )
 
 
 @router.put("/{bookmark_id}", response_model=Bookmark)
-async def update_bookmark(bookmark_id: str, bookmark: Bookmark):
+async def update_bookmark(bookmark_id: str, req: BookmarkUpdateRequest):
+    """Partial update: only the fields present in the body change."""
     bm = get_bookmark_manager()
-    country_code, country = await _ensure_country(bookmark)
-    updated = await bm.update_bookmark(
-        bookmark_id,
-        name=bookmark.name,
-        lat=bookmark.lat,
-        lng=bookmark.lng,
-        address=bookmark.address,
-        place_id=bookmark.place_id,
-        tags=list(bookmark.tags),
-        country_code=country_code,
-        country=country,
-    )
+    current = next((b for b in bm.list_bookmarks() if b.id == bookmark_id), None)
+    if current is None:
+        raise http_err(404, ErrorCode.BOOKMARK_NOT_FOUND, "Bookmark not found")
+    updates = req.model_dump(exclude_none=True)
+    # Re-resolve the country flag only when the coordinates actually move
+    # and the client didn't send its own country code.
+    lat = updates.get("lat", current.lat)
+    lng = updates.get("lng", current.lng)
+    if (lat, lng) != (current.lat, current.lng) and not updates.get("country_code"):
+        updates["country_code"], updates["country"] = await _resolve_country(lat, lng)
+    updated = await bm.update_bookmark(bookmark_id, **updates)
     if not updated:
         raise http_err(404, ErrorCode.BOOKMARK_NOT_FOUND, "Bookmark not found")
     return updated
