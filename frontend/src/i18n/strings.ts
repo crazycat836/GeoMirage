@@ -687,6 +687,31 @@ export const STRINGS = {
 
   // ── Search results a11y (UX fix) ──
   'search.results_aria': { zh: '搜尋結果', en: 'Search results' },
+
+  // ── Duration units (dock ETA / cooldown) ──
+  'unit.lt_1_min': { zh: '< 1 分鐘', en: '< 1 min' },
+  'unit.min': { zh: '{n} 分鐘', en: '{n} min' },
+  'unit.h': { zh: '{n} 小時', en: '{n} h' },
+  'unit.h_min': { zh: '{h} 小時 {m} 分鐘', en: '{h} h {m} m' },
+  'unit.s': { zh: '{n} 秒', en: '{n} s' },
+
+  // ── Render-error fallback (ErrorBoundary) ──
+  'error_boundary.title': { zh: '發生錯誤', en: 'Something went wrong' },
+  'error_boundary.fallback_message': { zh: '發生未預期的錯誤。', en: 'An unexpected error occurred.' },
+  'error_boundary.restart': { zh: '重新啟動', en: 'Restart' },
+
+  // ── Keyboard drag-reorder announcements (ReorderableList) ──
+  'chain.stop_n': { zh: '停靠點 {n}', en: 'Stop {n}' },
+  'dnd.instructions': {
+    zh: '按空白鍵或 Enter 拿起項目，用方向鍵移動，再按一次空白鍵或 Enter 放下，按 Esc 取消。',
+    en: 'To pick up an item, press space or enter. Use the arrow keys to move it, press space or enter again to drop it, or press escape to cancel.',
+  },
+  'dnd.picked_up': { zh: '已拿起 {item}。', en: 'Picked up {item}.' },
+  'dnd.over': { zh: '{item} 移到 {over} 的位置。', en: '{item} moved to the position of {over}.' },
+  'dnd.not_over': { zh: '{item} 目前不在可放置的位置。', en: '{item} is not over a drop position.' },
+  'dnd.dropped_over': { zh: '{item} 已放在 {over} 的位置。', en: '{item} dropped at the position of {over}.' },
+  'dnd.dropped': { zh: '{item} 已放下。', en: '{item} dropped.' },
+  'dnd.cancelled': { zh: '已取消拖曳，{item} 回到原位。', en: 'Drag cancelled. {item} returned to its original position.' },
 } as const;
 
 export type StringKey = keyof typeof STRINGS;

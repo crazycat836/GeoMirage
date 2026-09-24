@@ -455,7 +455,12 @@ export default function RoutesPanel({ onRouteLoaded }: RoutesPanelProps) {
         />
       ) : reorderMode ? (
         // Reorder mode: dnd-kit Sortable with explicit drag handles.
-        <ReorderableList sensors={sensors} onDragEnd={handleDragEnd} items={sorted.map((r) => r.id)}>
+        <ReorderableList
+          sensors={sensors}
+          onDragEnd={handleDragEnd}
+          items={sorted.map((r) => r.id)}
+          getLabel={(id) => sorted.find((r) => r.id === id)?.name ?? ''}
+        >
             <div className="flex flex-col gap-1.5">
               {sorted.map((route) => (
                 <SortableHandleRow key={route.id} id={route.id}>

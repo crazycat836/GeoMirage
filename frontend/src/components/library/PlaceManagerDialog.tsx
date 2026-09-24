@@ -96,7 +96,16 @@ export default function PlaceManagerDialog({
       }
     >
       <div className="flex flex-col gap-1.5 mt-2 max-h-[320px] overflow-y-auto scrollbar-thin">
-        <ReorderableList sensors={sensors} onDragEnd={handleDragEnd} items={orderedPlaces.map((p) => p.id)}>
+        <ReorderableList
+          sensors={sensors}
+          onDragEnd={handleDragEnd}
+          items={orderedPlaces.map((p) => p.id)}
+          getLabel={(id) => {
+            const place = orderedPlaces.find((p) => p.id === id)
+            if (!place) return ''
+            return isDefault(place) ? t('bm.default') : place.name
+          }}
+        >
             {orderedPlaces.map((place) => {
               const editable = !isDefault(place) && !!onRename
               const deletable = !isDefault(place)

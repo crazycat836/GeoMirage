@@ -9,7 +9,7 @@ import {
 import { SimMode } from '../../../hooks/useSimulation'
 import { useT } from '../../../i18n'
 import { haversineM, polylineDistanceM } from '../../../lib/geo'
-import { KM_THRESHOLD_M, formatDistanceM } from '../../../lib/format'
+import { KM_THRESHOLD_M, formatCooldownS, formatDistanceM, formatDurationS } from '../../../lib/format'
 import { RADIUS_PRESETS, SPEED_MAP, cooldownForDistM, type SpeedPresetMode } from '../../../lib/constants'
 import {
   FLOWER_LIMITS,
@@ -19,6 +19,8 @@ import {
   type FlowerTransfer,
 } from '../../../lib/flower'
 import Toggle from '../../ui/Toggle'
+
+type Translate = ReturnType<typeof useT>
 
 // ── Shared visual primitives ──────────────────────────────────────────
 
@@ -196,17 +198,11 @@ function useActiveSpeedKmh(): number {
   return SPEED_MAP[moveMode as SpeedPresetMode] ?? 10.8
 }
 
-function formatEta(distM: number, speedKmh: number, laps: number | null): string {
+function formatEta(distM: number, speedKmh: number, laps: number | null, t: Translate): string {
   if (distM <= 0 || speedKmh <= 0) return '--'
   if (laps === null) return '∞'
-  const totalM = distM * laps
-  const hours = totalM / 1000 / speedKmh
-  const mins = Math.round(hours * 60)
-  if (mins < 1) return '< 1 min'
-  if (mins < 60) return `${mins} min`
-  const h = Math.floor(mins / 60)
-  const m = mins % 60
-  return m === 0 ? `${h} h` : `${h} h ${m} m`
+  const hours = (distM * laps) / 1000 / speedKmh
+  return formatDurationS(hours * 3600, t)
 }
 
 // ── Per-mode card content ─────────────────────────────────────────────
@@ -233,21 +229,11 @@ function useNavDist(): number {
 
 // ── Teleport card ─────────────────────────────────────────────────────
 
-function formatCooldown(secs: number): string {
-  if (secs <= 0) return '0 s'
-  if (secs < 60) return `${secs} s`
-  const m = Math.floor(secs / 60)
-  if (m < 60) return `${m} min`
-  const h = Math.floor(m / 60)
-  const rm = m % 60
-  return rm === 0 ? `${h} h` : `${h} h ${rm} m`
-}
-
 function TeleportCard() {
   const t = useT()
   const distM = useNavDist()
   const cdSecs = cooldownForDistM(distM)
-  const cdDisplay = distM > 0 ? formatCooldown(cdSecs) : '--'
+  const cdDisplay = distM > 0 ? formatCooldownS(cdSecs, t) : '--'
   const { autoJitter, setAutoJitter } = useSimSettings()
   return (
     <CardShell>
@@ -274,7 +260,7 @@ function NavigateCard() {
   const t = useT()
   const distM = useNavDist()
   const speedKmh = useActiveSpeedKmh()
-  const eta = formatEta(distM, speedKmh, 1)
+  const eta = formatEta(distM, speedKmh, 1, t)
   return (
     <CardShell>
       <div className="grid grid-cols-2 relative">
@@ -299,7 +285,7 @@ function LoopCard() {
   const loopEnabled = loopLapCount !== 1
   const totalDist = useTotalWaypointDist(loopEnabled)
   const speedKmh = useActiveSpeedKmh()
-  const eta = formatEta(totalDist, speedKmh, loopLapCount)
+  const eta = formatEta(totalDist, speedKmh, loopLapCount, t)
   const displayCount = loopLapCount === null ? '∞' : String(loopLapCount)
 
   const handleToggle = (on: boolean) => {
@@ -348,7 +334,7 @@ function MultiStopCard() {
   const totalDist = useTotalWaypointDist(false)
   const speedKmh = useActiveSpeedKmh()
   // Multi-stop is a single pass through the stops (laps = 1), unlike Loop.
-  const eta = formatEta(totalDist, speedKmh, 1)
+  const eta = formatEta(totalDist, speedKmh, 1, t)
   return (
     <CardShell>
       <div className="grid grid-cols-2 relative">

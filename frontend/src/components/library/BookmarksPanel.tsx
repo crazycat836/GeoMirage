@@ -475,7 +475,12 @@ export default function BookmarksPanel({ onBookmarkClick, currentPosition }: Boo
           title={anyFilter ? t('bm.search_no_results') : t('bm.blank')}
         />
       ) : reorderList ? (
-        <ReorderableList sensors={sensors} onDragEnd={handleDragEnd} items={reorderList.map((b) => b.id)}>
+        <ReorderableList
+          sensors={sensors}
+          onDragEnd={handleDragEnd}
+          items={reorderList.map((b) => b.id)}
+          getLabel={(id) => reorderList.find((b) => b.id === id)?.name ?? ''}
+        >
             <div className="flex flex-col gap-1.5">
               {reorderList.map((b) => (
                 <SortableHandleRow key={b.id} id={b.id}>

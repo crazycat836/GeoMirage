@@ -93,7 +93,12 @@ export default function TagManagerDialog({
       }
     >
       <div className="flex flex-col gap-1.5 mt-2 max-h-[320px] overflow-y-auto scrollbar-thin">
-        <ReorderableList sensors={sensors} onDragEnd={handleDragEnd} items={orderedTags.map((tg) => tg.id)}>
+        <ReorderableList
+          sensors={sensors}
+          onDragEnd={handleDragEnd}
+          items={orderedTags.map((tg) => tg.id)}
+          getLabel={(id) => orderedTags.find((tg) => tg.id === id)?.name ?? ''}
+        >
             {orderedTags.map((tg) => {
               const deletable = !!onDelete && !PRESET_TAG_IDS.has(tg.id)
               return (

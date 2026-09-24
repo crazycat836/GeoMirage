@@ -77,7 +77,12 @@ export default function WaypointList({
             )}
 
             {canReorder ? (
-              <ReorderableList sensors={sensors} onDragEnd={handleDragEnd} items={stops.map((s) => s.id)}>
+              <ReorderableList
+                sensors={sensors}
+                onDragEnd={handleDragEnd}
+                items={stops.map((s) => s.id)}
+                getLabel={(id) => t('chain.stop_n', { n: stops.findIndex((s) => s.id === id) + 1 })}
+              >
                   {stops.map((pt, j) => (
                     <SortableStopRow
                       key={pt.id}

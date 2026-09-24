@@ -111,7 +111,7 @@ export function buildDockContext(
       const plan = estimateFlowerPlan(wp, flower.settings, currentPos)
       const dist = flowerPlanDistanceM(plan)
       const secs = flowerPlanSeconds(plan, flower.speedKmh)
-      const eta = secs == null ? t('dock.flower_forever') : formatDurationS(secs)
+      const eta = secs == null ? t('dock.flower_forever') : formatDurationS(secs, t)
       return {
         title: `${t('mode.flower')} · ${count} ${t('panel.pts_short')}${dist == null ? '' : formatChainDist(dist)}`,
         subtitle: `${t('dock.est_time')} ${eta} · ${t('panel.flower_hint')}`,

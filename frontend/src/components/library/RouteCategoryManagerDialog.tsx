@@ -98,7 +98,12 @@ export default function RouteCategoryManagerDialog(props: RouteCategoryManagerDi
           {/* Category list with drag-reorder. The preset "default" row
               participates in the visual list (so users see what's there)
               but its rename / delete / drag controls are disabled. */}
-          <ReorderableList sensors={sensors} onDragEnd={handleDragEnd} items={categories.map((c) => c.id)}>
+          <ReorderableList
+            sensors={sensors}
+            onDragEnd={handleDragEnd}
+            items={categories.map((c) => c.id)}
+            getLabel={(id) => categories.find((c) => c.id === id)?.name ?? ''}
+          >
               <div className="flex flex-col gap-1.5 max-h-[340px] overflow-auto">
                 {categories.map((cat) => (
                   <SortableCategoryRow

@@ -14,7 +14,9 @@ import { readLS, writeLS } from '../lib/local-storage';
 
 const STORAGE_KEY = STORAGE_KEYS.lang;
 
-function detectInitialLang(): Lang {
+/** Stored language, else the browser locale. Also used outside the
+ *  provider (ErrorBoundary renders when the React tree is gone). */
+export function detectInitialLang(): Lang {
   const saved = readLS(STORAGE_KEY) as Lang | null;
   if (saved === 'zh' || saved === 'en') return saved;
   const nav = typeof navigator !== 'undefined' ? navigator.language : 'zh';
@@ -26,6 +28,15 @@ function interpolate(str: string, vars?: Record<string, string | number>): strin
   return str.replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? String(vars[k]) : `{${k}}`));
 }
 
+/** Hook-free lookup for code that cannot call `useT` (class components,
+ *  tests). Same fallback chain as the provider's `t`. */
+export function translate(lang: Lang, key: StringKey, vars?: Record<string, string | number>): string {
+  const entry = STRINGS[key];
+  if (!entry) return key;
+  const raw = entry[lang] ?? entry.zh ?? key;
+  return interpolate(raw, vars);
+}
+
 export function I18nProvider({ children }: { children: React.ReactNode }) {
   const [lang, setLangState] = useState<Lang>(detectInitialLang);
 
@@ -35,12 +46,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const t = useCallback(
-    (key: StringKey, vars?: Record<string, string | number>) => {
-      const entry = STRINGS[key];
-      if (!entry) return key;
-      const raw = entry[lang] ?? entry.zh ?? key;
-      return interpolate(raw, vars);
-    },
+    (key: StringKey, vars?: Record<string, string | number>) => translate(lang, key, vars),
     [lang],
   );
 

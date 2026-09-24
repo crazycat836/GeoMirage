@@ -1,5 +1,6 @@
 import React from 'react'
 import { devWarn } from '../lib/dev-log'
+import { detectInitialLang, translate } from '../i18n'
 
 interface ErrorBoundaryProps {
   children: React.ReactNode
@@ -16,9 +17,9 @@ interface ErrorBoundaryState {
 // painful in Electron, where there is no address bar to refresh. The fallback
 // here gives the user a visible "Restart" affordance that reloads the renderer.
 //
-// Note: hooks (incl. `useT`) cannot be used inside a class component, so the
-// fallback copy is hardcoded English. This could be i18n'd later by lifting
-// the strings into a small translator helper passed in via props.
+// Hooks (incl. `useT`) cannot be used inside a class component, and this
+// boundary may sit above I18nProvider, so the fallback reads the stored
+// language itself and looks strings up with the hook-free `translate`.
 export default class ErrorBoundary extends React.Component<
   ErrorBoundaryProps,
   ErrorBoundaryState
@@ -49,7 +50,8 @@ export default class ErrorBoundary extends React.Component<
       return this.props.children
     }
 
-    const message = this.state.error?.message ?? 'An unexpected error occurred.'
+    const lang = detectInitialLang()
+    const message = this.state.error?.message ?? translate(lang, 'error_boundary.fallback_message')
 
     return (
       <div
@@ -83,7 +85,7 @@ export default class ErrorBoundary extends React.Component<
               color: 'var(--color-text-1, #f0f2f8)',
             }}
           >
-            Something went wrong
+            {translate(lang, 'error_boundary.title')}
           </div>
           <div
             style={{
@@ -102,7 +104,7 @@ export default class ErrorBoundary extends React.Component<
             onClick={this.handleRestart}
             style={{ width: '100%' }}
           >
-            Restart
+            {translate(lang, 'error_boundary.restart')}
           </button>
         </div>
       </div>

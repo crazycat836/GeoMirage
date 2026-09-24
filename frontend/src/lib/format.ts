@@ -1,6 +1,8 @@
 // Shared display-formatting helpers. Precision is a parameter so each
 // call site keeps the exact output it had before these were extracted.
 
+import type { StringKey } from '../i18n'
+
 interface LatLng {
   lat: number
   lng: number
@@ -34,14 +36,26 @@ export function formatDistanceM(m: number, kmPrecision: 1 | 2 = 2): string {
   return `${Math.round(m)} m`
 }
 
-/** Coarse duration for estimates: "< 1 min", "12 min", "1 h 5 m". */
-export function formatDurationS(totalSeconds: number): string {
-  const mins = Math.round(totalSeconds / 60)
-  if (mins < 1) return '< 1 min'
-  if (mins < 60) return `${mins} min`
+type Translate = (key: StringKey, vars?: Record<string, string | number>) => string
+
+/** Whole minutes as "< 1 min" / "12 min" / "2 h" / "1 h 5 m" (localised). */
+function formatMinutes(mins: number, t: Translate): string {
+  if (mins < 1) return t('unit.lt_1_min')
+  if (mins < 60) return t('unit.min', { n: mins })
   const h = Math.floor(mins / 60)
   const m = mins % 60
-  return m === 0 ? `${h} h` : `${h} h ${m} m`
+  return m === 0 ? t('unit.h', { n: h }) : t('unit.h_min', { h, m })
+}
+
+/** Coarse duration for estimates: "< 1 min", "12 min", "1 h 5 m". */
+export function formatDurationS(totalSeconds: number, t: Translate): string {
+  return formatMinutes(Math.round(totalSeconds / 60), t)
+}
+
+/** Cooldown length: seconds below a minute, then floored minutes / hours. */
+export function formatCooldownS(secs: number, t: Translate): string {
+  if (secs < 60) return t('unit.s', { n: Math.max(0, secs) })
+  return formatMinutes(Math.floor(secs / 60), t)
 }
 
 /** Cooldown countdown: "M:SS" under an hour, "H:MM:SS" from one hour up. */
