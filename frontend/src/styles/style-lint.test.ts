@@ -70,6 +70,12 @@ describe('style lint', () => {
     expect(undefinedVars).toEqual([])
   })
 
+  it('type stays inside the design scale: weight <= 600, no whole-pixel font size below --text-2xs (10px)', () => {
+    const css = walk(SRC, ['.css'])
+    const re = /font-weight:\s*[7-9]00|fontWeight:\s*['"]?[7-9]00|\bfont-(bold|extrabold|black)\b|font-size:\s*[0-9](\.\d+)?px|fontSize:\s*[0-9](\.\d+)?\b|text-\[[0-9]px\]/
+    expect(scan([...TSX, ...css], re)).toEqual([])
+  })
+
   it('components/**/*.tsx add no new hard-coded colours (DESIGN.md §10: use tokens)', () => {
     // Known leftovers, as lines per file that contain a hex or rgb()/rgba()
     // literal. A file may not exceed its count, and a count must be lowered

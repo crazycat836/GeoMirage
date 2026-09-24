@@ -102,7 +102,7 @@ export default function SpeedToggle() {
             >
               {value}
               {on && (
-                <span className="text-[9px] font-medium tracking-[0.08em] uppercase opacity-60 ml-1">
+                <span className="text-2xs font-medium tracking-[0.08em] uppercase opacity-60 ml-1">
                   km/h
                 </span>
               )}
