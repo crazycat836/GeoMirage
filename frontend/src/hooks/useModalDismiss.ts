@@ -28,6 +28,13 @@ function isTopLayer(layer: symbol): boolean {
   return openLayers[openLayers.length - 1] === layer
 }
 
+/** True while any modal-shaped surface (dialog, drawer, menu) is open.
+ *  Global keyboard shortcuts check this so keys meant for the open layer
+ *  don't also drive the page behind it. */
+export function hasOpenLayer(): boolean {
+  return openLayers.length > 0
+}
+
 /**
  * Shared keyboard-dismiss + focus-restore plumbing for modal-shaped
  * surfaces (drawers, dialogs).

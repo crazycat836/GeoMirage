@@ -1,5 +1,6 @@
 import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { useT } from '../i18n';
+import { hasOpenLayer } from '../hooks/useModalDismiss';
 
 interface JoystickPadProps {
   direction: number;
@@ -18,6 +19,26 @@ const DEFAULT_SIZE = 84;
 // visual tracks 1:1 anyway).
 const SMOOTH_TAU_MS = 40;
 const SETTLE_EPS = 0.05; // px — stop animating when both axes are within this
+
+// Widgets that already use arrow keys (or letters) for their own navigation.
+// While focus is inside one of these, WASD/arrows belong to that widget.
+const KEY_OWNING_ROLES =
+  '[role="menu"],[role="menubar"],[role="tablist"],[role="dialog"],[role="listbox"],[role="radiogroup"],[role="slider"]';
+
+/** Whether a window-level keydown should be left alone by the joystick:
+ *  modifier combos (Cmd+A/S/D), keys another handler already consumed,
+ *  anything while a dialog/drawer/menu layer is open, and keys typed into
+ *  form fields or widgets that navigate with arrows themselves. */
+function shouldIgnoreJoystickKey(e: KeyboardEvent): boolean {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return true;
+  if (hasOpenLayer()) return true;
+  const tgt = e.target;
+  if (!(tgt instanceof HTMLElement)) return false;
+  if (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT' || tgt.isContentEditable) {
+    return true;
+  }
+  return tgt.closest(KEY_OWNING_ROLES) != null;
+}
 
 function JoystickPad({
   direction,
@@ -237,10 +258,18 @@ function JoystickPad({
       ensureAnimating();
     };
 
+    const releaseAll = () => {
+      if (pressed.size > 0) {
+        pressed.clear();
+        setDragging(false);
+        targetPosRef.current = { x: 0, y: 0 };
+        ensureAnimating();
+        onReleaseRef.current();
+      }
+    };
+
     const onKeyDown = (e: KeyboardEvent) => {
-      // Ignore when typing in inputs/textareas
-      const tgt = e.target as HTMLElement | null;
-      if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)) return;
+      if (shouldIgnoreJoystickKey(e)) return;
       const key = e.key.toLowerCase();
       const dir = KEY_DIR[key];
       if (!dir) return;
@@ -251,28 +280,22 @@ function JoystickPad({
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
+      // macOS drops the keyup of any key released while Cmd is held, so a
+      // direction pressed before/with Cmd would stay latched. Releasing
+      // Cmd (or any keyup with Cmd still down) drops every held direction.
+      if (e.key === 'Meta' || e.metaKey) { releaseAll(); return; }
       const key = e.key.toLowerCase();
       const dir = KEY_DIR[key];
       if (!dir) return;
       if (pressed.delete(dir)) update();
     };
-    const onBlur = () => {
-      if (pressed.size > 0) {
-        pressed.clear();
-        setDragging(false);
-        targetPosRef.current = { x: 0, y: 0 };
-        ensureAnimating();
-        onReleaseRef.current();
-      }
-    };
-
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
-    window.addEventListener('blur', onBlur);
+    window.addEventListener('blur', releaseAll);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
-      window.removeEventListener('blur', onBlur);
+      window.removeEventListener('blur', releaseAll);
     };
     // Mount-once: callbacks are read via refs above so the listeners and
     // their `pressed` Set survive consumer re-renders.
