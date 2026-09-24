@@ -29,7 +29,7 @@ class RestoreHandler:
         engine._cancel_jitter()
 
         # Stop any running movement
-        if engine.state not in (SimulationState.IDLE, SimulationState.DISCONNECTED):
+        if engine.is_busy():
             await engine.stop()
 
         # Clear the simulated location on the device

@@ -44,7 +44,7 @@ class JoystickHandler:
             )
 
         # Stop any running simulation first
-        if engine.state not in (SimulationState.IDLE, SimulationState.DISCONNECTED):
+        if engine.is_busy():
             await engine.stop()
 
         profile_name = mode.value

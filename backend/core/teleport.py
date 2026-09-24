@@ -25,7 +25,7 @@ class TeleportHandler:
         engine = self.engine
 
         # Stop any active simulation first
-        if engine.state not in (SimulationState.IDLE, SimulationState.DISCONNECTED):
+        if engine.is_busy():
             await engine.stop()
 
         engine.state = SimulationState.TELEPORTING

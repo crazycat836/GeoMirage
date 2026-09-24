@@ -286,11 +286,16 @@ class SimulationEngine:
         # A real simulation supersedes idle auto-jitter — stop it so the
         # two don't fight over position pushes.
         self._cancel_jitter()
-        self._active_task = asyncio.create_task(coro)
+        # Two callers that both waited out stop() can reach this point
+        # back to back; never orphan a still-running task by overwriting
+        # its reference.
+        await self._cancel_active_task()
+        task = asyncio.create_task(coro)
+        self._active_task = task
         # Aborts the frontend must hear about are re-raised after cleanup.
         passthrough: Exception | None = None
         try:
-            await self._active_task
+            await task
         except asyncio.CancelledError:
             logger.info("%s cancelled", label)
         except (DeviceLostError, RouteUnavailableError) as exc:
@@ -302,15 +307,20 @@ class SimulationEngine:
             # pymobiledevice3 timeouts) — walk the __cause__ chain.
             passthrough = unwrap_device_lost(exc)
         finally:
-            self._active_task = None
-            # Force state back to IDLE if a handler crashed / was cancelled
-            # mid-flight so the UI doesn't stay stuck showing "navigating".
-            if self.state not in (SimulationState.IDLE, SimulationState.DISCONNECTED):
-                self.state = SimulationState.IDLE
-                try:
-                    await self._emit("state_change", {"state": self.state.value})
-                except Exception:
-                    logger.exception("Failed to emit idle state_change after %s", label)
+            # Only the run that still owns the engine may reset it: once a
+            # newer action has replaced (or stop() has cleared) the task,
+            # the state belongs to that action.
+            if self._active_task is task:
+                self._active_task = None
+                # Force state back to IDLE if a handler crashed / was
+                # cancelled mid-flight so the UI doesn't stay stuck
+                # showing "navigating".
+                if self.state not in (SimulationState.IDLE, SimulationState.DISCONNECTED):
+                    self.state = SimulationState.IDLE
+                    try:
+                        await self._emit("state_change", {"state": self.state.value})
+                    except Exception:
+                        logger.exception("Failed to emit idle state_change after %s", label)
         if passthrough is not None:
             raise passthrough
 
@@ -325,7 +335,7 @@ class SimulationEngine:
         await self._ensure_stopped()
         self._stop_event.clear()
         self._pause_event.set()
-        self.snapshot = SimulationSnapshot(
+        self.snapshot = snapshot = SimulationSnapshot(
             mode="navigate",
             movement_mode=mode.value,
             speed_kmh=speed_kmh,
@@ -344,8 +354,7 @@ class SimulationEngine:
                 "Navigate",
             )
         finally:
-            if self.state == SimulationState.IDLE:
-                self.snapshot = None
+            self._release_snapshot(snapshot)
 
     async def start_loop(
         self,
@@ -364,7 +373,7 @@ class SimulationEngine:
         await self._ensure_stopped()
         self._stop_event.clear()
         self._pause_event.set()
-        self.snapshot = SimulationSnapshot(
+        self.snapshot = snapshot = SimulationSnapshot(
             mode="loop",
             movement_mode=mode.value,
             speed_kmh=speed_kmh,
@@ -389,8 +398,7 @@ class SimulationEngine:
                 "Loop",
             )
         finally:
-            if self.state == SimulationState.IDLE:
-                self.snapshot = None
+            self._release_snapshot(snapshot)
 
     async def joystick_start(self, mode: MovementMode) -> None:
         """Activate joystick mode."""
@@ -429,7 +437,7 @@ class SimulationEngine:
         await self._ensure_stopped()
         self._stop_event.clear()
         self._pause_event.set()
-        self.snapshot = SimulationSnapshot(
+        self.snapshot = snapshot = SimulationSnapshot(
             mode="multi_stop",
             movement_mode=mode.value,
             speed_kmh=speed_kmh,
@@ -456,8 +464,7 @@ class SimulationEngine:
                 "Multi-stop",
             )
         finally:
-            if self.state == SimulationState.IDLE:
-                self.snapshot = None
+            self._release_snapshot(snapshot)
 
     async def random_walk(
         self,
@@ -482,7 +489,7 @@ class SimulationEngine:
         # time-based seed that's captured in the snapshot.
         if seed is None:
             seed = int(time.time() * 1000) & _DEFAULT_RANDOM_WALK_SEED_MASK
-        self.snapshot = SimulationSnapshot(
+        self.snapshot = snapshot = SimulationSnapshot(
             mode="random_walk",
             movement_mode=mode.value,
             speed_kmh=speed_kmh,
@@ -509,8 +516,7 @@ class SimulationEngine:
                 "Random walk",
             )
         finally:
-            if self.state == SimulationState.IDLE:
-                self.snapshot = None
+            self._release_snapshot(snapshot)
 
     async def flower(
         self,
@@ -537,7 +543,7 @@ class SimulationEngine:
         await self._ensure_stopped()
         self._stop_event.clear()
         self._pause_event.set()
-        self.snapshot = SimulationSnapshot(
+        self.snapshot = snapshot = SimulationSnapshot(
             mode="flower",
             movement_mode=mode.value,
             speed_kmh=speed_kmh,
@@ -572,8 +578,7 @@ class SimulationEngine:
                 "Flower",
             )
         finally:
-            if self.state == SimulationState.IDLE:
-                self.snapshot = None
+            self._release_snapshot(snapshot)
 
     async def pause(self) -> None:
         """Pause the active movement.
@@ -627,13 +632,7 @@ class SimulationEngine:
             await self._joystick.stop()
 
         # Cancel and await the active task
-        if self._active_task is not None and not self._active_task.done():
-            self._active_task.cancel()
-            try:
-                await self._active_task
-            except asyncio.CancelledError:
-                pass
-            self._active_task = None
+        await self._cancel_active_task()
 
         if self.state not in (SimulationState.IDLE, SimulationState.DISCONNECTED):
             self.state = SimulationState.IDLE
@@ -780,9 +779,38 @@ class SimulationEngine:
         from core.movement_loop import move_along_route
         await move_along_route(self, coords, speed_profile)
 
+    def is_busy(self) -> bool:
+        """True while any action is live: a running state, a handler task
+        still planning its route (state is IDLE until the route arrives),
+        or the joystick loop."""
+        if self.state not in (SimulationState.IDLE, SimulationState.DISCONNECTED):
+            return True
+        if self._active_task is not None and not self._active_task.done():
+            return True
+        return self._joystick.is_active
+
+    async def _cancel_active_task(self) -> None:
+        """Cancel the running handler task (if any) and wait for it."""
+        task = self._active_task
+        if task is None or task.done():
+            return
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        if self._active_task is task:
+            self._active_task = None
+
+    def _release_snapshot(self, snapshot: SimulationSnapshot) -> None:
+        """Drop *snapshot* once its run is back at IDLE — unless a newer
+        action has already installed its own."""
+        if self.state == SimulationState.IDLE and self.snapshot is snapshot:
+            self.snapshot = None
+
     async def _ensure_stopped(self) -> None:
         """Make sure no movement is active before starting a new one."""
-        if self.state not in (SimulationState.IDLE, SimulationState.DISCONNECTED):
+        if self.is_busy():
             await self.stop()
         self._stop_event.clear()
         # Fresh session — let the next handler resolve speed from its own

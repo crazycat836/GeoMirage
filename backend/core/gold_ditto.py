@@ -27,8 +27,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from models.schemas import SimulationState
-
 if TYPE_CHECKING:
     from core.simulation_engine import SimulationEngine
 
@@ -50,7 +48,7 @@ class GoldDittoHandler:
         the game sees as a "swipe", because the apparent jump from the
         gold-flower spot back to real GPS goes through this anchor.
         """
-        if self.engine.state not in (SimulationState.IDLE, SimulationState.DISCONNECTED):
+        if self.engine.is_busy():
             await self.engine.stop()
 
         await self.engine.location_service.set(lat, lng)

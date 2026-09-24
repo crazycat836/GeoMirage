@@ -475,3 +475,123 @@ def test_auto_jitter_does_not_push_after_restore_or_stop(monkeypatch, terminator
             assert engine.location_active is False
 
     asyncio.run(scenario())
+
+
+# ── Task ownership while a route is still being planned ──────────────────
+
+class _DelayedRouteService:
+    """RouteService that waits before answering, so a test can issue a
+    second action while the first is still planning. Always serves the
+    offline straight-line route so OSRM is never contacted."""
+
+    def __init__(self, delay_s: float) -> None:
+        from services.route_service import RouteService
+
+        self.delay_s = delay_s
+        self._inner = RouteService()
+
+    async def get_route(self, *args, **kwargs):
+        await asyncio.sleep(self.delay_s)
+        kwargs["force_straight"] = True
+        return await self._inner.get_route(*args, **kwargs)
+
+    async def get_multi_route(self, *args, **kwargs):
+        await asyncio.sleep(self.delay_s)
+        kwargs["force_straight"] = True
+        return await self._inner.get_multi_route(*args, **kwargs)
+
+
+def test_teleport_during_route_fetch_cancels_the_pending_navigate():
+    from models.schemas import Coordinate, MovementMode, SimulationState
+
+    async def scenario():
+        engine, service, _ = _make_engine()
+        engine.route_service = _DelayedRouteService(0.1)
+        engine.current_position = Coordinate(lat=25.0, lng=121.5)
+
+        nav = asyncio.create_task(engine.navigate(
+            Coordinate(lat=25.0, lng=121.5002), MovementMode.WALKING,
+            speed_kmh=72.0,
+        ))
+        await _wait_for(lambda: engine._active_task is not None)
+
+        await engine.teleport(25.01, 121.51)
+        await asyncio.wait_for(nav, timeout=2.0)
+        await asyncio.sleep(0.2)  # the old route would have answered by now
+
+        # Only the teleport reached the device; the old navigate never
+        # dragged it back toward its own start.
+        assert service.calls == [(25.01, 121.51)]
+        assert engine.state == SimulationState.IDLE
+        assert engine._active_task is None
+
+    asyncio.run(scenario())
+
+
+def test_second_navigate_during_route_fetch_stops_the_first():
+    from models.schemas import Coordinate, MovementMode, SimulationState
+
+    async def scenario():
+        engine, service, _ = _make_engine()
+        engine.route_service = _DelayedRouteService(0.05)
+        engine.current_position = Coordinate(lat=25.0, lng=121.5)
+        east = Coordinate(lat=25.0, lng=121.5002)
+        north = Coordinate(lat=25.0002, lng=121.5)
+
+        first = asyncio.create_task(engine.navigate(
+            east, MovementMode.WALKING, speed_kmh=72.0,
+        ))
+        await _wait_for(lambda: engine._active_task is not None)
+        second = asyncio.create_task(engine.navigate(
+            north, MovementMode.WALKING, speed_kmh=72.0,
+        ))
+        await asyncio.wait_for(asyncio.gather(first, second), timeout=5.0)
+
+        # Every push belongs to the northbound run: nothing moved east
+        # beyond GPS jitter (1.5 m ~ 1.5e-5 deg; the east leg is 20 m).
+        assert service.calls
+        assert all(lng == pytest.approx(121.5, abs=3e-5) for _, lng in service.calls)
+        assert service.calls[-1] == pytest.approx((north.lat, north.lng), abs=3e-5)
+        assert engine.state == SimulationState.IDLE
+
+    asyncio.run(scenario())
+
+
+def test_old_run_cleanup_does_not_clear_the_new_runs_snapshot():
+    from models.schemas import Coordinate, MovementMode
+
+    async def scenario():
+        from core.simulation_engine import SimulationEngine
+
+        service = FakeLocationService()
+
+        async def slow_emit(event_type, data):
+            # A connected WS client makes every emit yield.
+            await asyncio.sleep(0.02)
+
+        engine = SimulationEngine(service, event_callback=slow_emit)
+        service.engine = engine
+        engine.route_service = _DelayedRouteService(0.05)
+        engine.current_position = Coordinate(lat=25.0, lng=121.5)
+
+        first = asyncio.create_task(engine.navigate(
+            Coordinate(lat=25.0, lng=121.51), MovementMode.WALKING,
+            speed_kmh=72.0,
+        ))
+        await _wait_for(lambda: len(service.calls) >= 1)
+
+        second_dest = Coordinate(lat=25.0005, lng=121.5)
+        second = asyncio.create_task(engine.navigate(
+            second_dest, MovementMode.WALKING, speed_kmh=72.0,
+        ))
+        await asyncio.wait_for(first, timeout=2.0)
+        pushes_before_second = len(service.calls)
+        await asyncio.wait_for(second, timeout=5.0)
+
+        second_snaps = service.snapshots_at_push[pushes_before_second:]
+        assert second_snaps, "second navigate never pushed"
+        for snap in second_snaps:
+            assert snap is not None
+            assert snap.destination == {"lat": second_dest.lat, "lng": second_dest.lng}
+
+    asyncio.run(scenario())
