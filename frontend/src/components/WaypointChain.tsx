@@ -223,7 +223,7 @@ function AddButton({ onClick, label }: { onClick: () => void; label: string }) {
         'shrink-0 inline-flex items-center gap-1.5 h-[34px] px-3 rounded-[10px]',
         'border-[1.5px] border-dashed border-[var(--color-border-strong)]',
         'text-[var(--color-text-2)] text-[12px] font-medium',
-        'hover:text-[var(--color-accent-strong)] hover:border-[rgba(167, 139, 250,0.5)] hover:bg-[var(--color-accent-dim)]',
+        'hover:text-[var(--color-accent-strong)] hover:border-[var(--color-border-focus)] hover:bg-[var(--color-accent-dim)]',
         'transition-[color,background,border-color] duration-150',
       ].join(' ')}
     >
@@ -243,7 +243,7 @@ function RandomButton({ onClick, label }: { onClick: () => void; label: string }
         'shrink-0 inline-flex items-center gap-1.5 h-[34px] px-3 rounded-[10px]',
         'border-[1.5px] border-dashed border-[var(--color-border-strong)]',
         'text-[var(--color-text-2)] text-[12px] font-medium',
-        'hover:text-[var(--color-accent-strong)] hover:border-[rgba(167, 139, 250,0.5)] hover:bg-[var(--color-accent-dim)]',
+        'hover:text-[var(--color-accent-strong)] hover:border-[var(--color-border-focus)] hover:bg-[var(--color-accent-dim)]',
         'transition-[color,background,border-color] duration-150',
       ].join(' ')}
     >

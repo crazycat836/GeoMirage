@@ -52,7 +52,7 @@ export function ToolbarButton({
   // Active state uses accent-strong on accent-dim for WCAG AA contrast
   // (DESIGN.md §2 & §8a: accent-on-accent-dim fails 4.5:1).
   const colorClass = active
-    ? 'bg-[var(--color-accent-dim)] text-[var(--color-accent-strong)] shadow-[0_0_12px_rgba(167, 139, 250,0.25)]'
+    ? 'bg-[var(--color-accent-dim)] text-[var(--color-accent-strong)] shadow-[0_0_12px_var(--color-accent-glow)]'
     : accent
       ? 'text-[var(--color-accent-strong)] hover:bg-[var(--color-surface-hover)]'
       : variant === 'round'
