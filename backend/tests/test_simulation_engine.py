@@ -441,3 +441,37 @@ def test_interpolate_empty_and_single_point_routes():
         "lat": 25.0, "lng": 121.5, "timestamp_offset": 0.0,
         "bearing": 0.0, "seg_idx": 0,
     }]
+
+
+# ── Auto-jitter lifecycle ─────────────────────────────────────────────────
+
+class _ClearableLocationService(FakeLocationService):
+    async def clear(self) -> None:
+        self.calls.append(("clear",))
+
+
+@pytest.mark.parametrize("terminator", ["restore", "stop"])
+def test_auto_jitter_does_not_push_after_restore_or_stop(monkeypatch, terminator):
+    import core.simulation_engine as se
+    from core.simulation_engine import SimulationEngine
+
+    monkeypatch.setattr(se, "JITTER_INTERVAL_RANGE_S", (0.01, 0.01))
+
+    async def scenario():
+        service = _ClearableLocationService()
+        engine = SimulationEngine(service, event_callback=EventRecorder())
+        await engine.teleport(25.0, 121.5)
+        await engine.set_auto_jitter(True)
+        await _wait_for(lambda: len(service.calls) >= 2)
+
+        await getattr(engine, terminator)()
+        pushes_at_end = len(service.calls)
+        await asyncio.sleep(0.1)
+
+        assert len(service.calls) == pushes_at_end
+        assert engine._jitter_task is None
+        if terminator == "restore":
+            assert service.calls[-1] == ("clear",)
+            assert engine.location_active is False
+
+    asyncio.run(scenario())

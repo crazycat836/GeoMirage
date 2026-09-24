@@ -212,14 +212,19 @@ class SimulationEngine:
                 # Re-anchor to the latest position but keep the loop.
                 self._jitter_anchor = self.current_position
                 return
-            self._jitter_task.cancel()
-            self._jitter_task = None
-            self._jitter_anchor = None
+            self._cancel_jitter()
             return
         if not enabled or self.current_position is None:
             return
         self._jitter_anchor = self.current_position
         self._jitter_task = asyncio.create_task(self._jitter_loop())
+
+    def _cancel_jitter(self) -> None:
+        """Stop idle auto-jitter so it can't push a position after stop/restore."""
+        if self._jitter_task is not None and not self._jitter_task.done():
+            self._jitter_task.cancel()
+        self._jitter_task = None
+        self._jitter_anchor = None
 
     async def _jitter_loop(self) -> None:
         import math
@@ -228,10 +233,15 @@ class SimulationEngine:
             while (
                 self.state == SimulationState.IDLE
                 and self._jitter_anchor is not None
+                and self.location_active
             ):
                 await asyncio.sleep(random.uniform(*JITTER_INTERVAL_RANGE_S))
                 anchor = self._jitter_anchor
-                if anchor is None or self.state != SimulationState.IDLE:
+                if (
+                    anchor is None
+                    or self.state != SimulationState.IDLE
+                    or not self.location_active
+                ):
                     break
                 # ±JITTER_RADIUS_M converted to degrees; longitude scaled by latitude.
                 dlat = random.uniform(-JITTER_RADIUS_M, JITTER_RADIUS_M) / METERS_PER_DEG_LAT
@@ -275,10 +285,7 @@ class SimulationEngine:
         instead of watching it silently snap back to idle."""
         # A real simulation supersedes idle auto-jitter — stop it so the
         # two don't fight over position pushes.
-        if self._jitter_task is not None and not self._jitter_task.done():
-            self._jitter_task.cancel()
-            self._jitter_task = None
-            self._jitter_anchor = None
+        self._cancel_jitter()
         self._active_task = asyncio.create_task(coro)
         # Aborts the frontend must hear about are re-raised after cleanup.
         passthrough: Exception | None = None
@@ -613,6 +620,7 @@ class SimulationEngine:
         """
         self._stop_event.set()
         self._pause_event.set()  # unblock if paused
+        self._cancel_jitter()
 
         # Stop joystick if active
         if self._joystick.is_active:

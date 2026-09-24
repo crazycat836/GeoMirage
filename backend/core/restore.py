@@ -25,6 +25,9 @@ class RestoreHandler:
         """
         engine = self.engine
 
+        # Idle auto-jitter runs while IDLE, so the stop() below would miss it
+        engine._cancel_jitter()
+
         # Stop any running movement
         if engine.state not in (SimulationState.IDLE, SimulationState.DISCONNECTED):
             await engine.stop()
