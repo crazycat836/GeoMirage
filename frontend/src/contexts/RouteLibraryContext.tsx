@@ -329,15 +329,17 @@ export function RouteLibraryProvider({ children }: { children: React.ReactNode }
       const text = await file.text()
       const data = JSON.parse(text)
       validateRoutesImport(data)
-      const res = await api.importAllRoutes({ routes: data.routes })
+      // Send the whole file so the backend can rebuild its categories.
+      const res = await api.importAllRoutes(data)
       const routes = await api.getSavedRoutes()
       setSavedRoutes(routes)
+      await refreshRouteCategories()
       showToast(t('toast.routes_imported', { n: res.imported }))
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : ''
       showToast(t('toast.routes_import_failed', { msg: message }))
     }
-  }, [showToast, t])
+  }, [showToast, t, refreshRouteCategories])
 
   // Memoize so consumers don't re-render on every provider re-render.
   // Each member is a useCallback / stable state value, so the value

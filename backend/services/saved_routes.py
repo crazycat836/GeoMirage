@@ -340,20 +340,45 @@ class SavedRoutesStore(JsonModelStore[RouteStore]):
             await self._persist()
             return "renamed", new_route
 
-    async def import_all(self, routes: list[SavedRoute]) -> int:
-        """Merge *routes* into the store with fresh ids. Returns count imported."""
+    async def import_all(
+        self,
+        routes: list[SavedRoute],
+        categories: list[RouteCategory] | None = None,
+    ) -> int:
+        """Merge *routes* (and the *categories* they reference) into the
+        store with fresh ids. Returns count imported.
+
+        Categories whose id already exists here are reused; the rest are
+        appended under a new id, and each route's ``category_id`` is
+        remapped through that old→new table (same approach as
+        ``BookmarkManager.import_json``). Routes pointing at a category
+        that is neither imported nor present fall back to ``default``.
+        """
         if not routes:
             return 0
         async with self._lock:
+            category_id_map: dict[str, str] = {}
+            live_ids = {c.id for c in self._store.categories}
+            for cat in categories or []:
+                if cat.id in live_ids:
+                    category_id_map[cat.id] = cat.id
+                    continue
+                new_id = str(uuid.uuid4())
+                category_id_map[cat.id] = new_id
+                self._store.categories.append(cat.model_copy(update={
+                    "id": new_id,
+                    "sort_order": next_sort_order(self._store.categories),
+                }))
             now = _now_iso()
             base_order = next_sort_order(self._store.routes)
             for offset, r in enumerate(routes):
+                mapped = category_id_map.get(r.category_id, r.category_id)
                 self._store.routes.append(r.model_copy(update={
                     "id": str(uuid.uuid4()),
                     "created_at": now,
                     "updated_at": now,
                     "sort_order": base_order + offset,
-                    "category_id": self._resolve_category_id(r.category_id),
+                    "category_id": self._resolve_category_id(mapped),
                 }))
             await self._persist()
             return len(routes)

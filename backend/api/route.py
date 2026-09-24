@@ -16,6 +16,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from models.schemas import (
+    ROUTE_STORE_VERSION,
     Coordinate,
     RouteBatchDeleteRequest,
     RouteCategory,
@@ -176,21 +177,31 @@ async def rename_saved(route_id: str, req: _RouteRenameRequest):
 
 @router.get("/saved/export")
 async def export_all_saved_routes():
-    """Export every saved route as a single JSON bundle."""
-    payload = {"routes": [r.model_dump(mode="json") for r in get_saved_routes_store().list()]}
+    """Export every saved route plus the categories they belong to, so a
+    restore on a fresh install can rebuild the categories."""
+    store = get_saved_routes_store()
+    payload = {
+        "version": ROUTE_STORE_VERSION,
+        "categories": [c.model_dump(mode="json") for c in store.list_categories()],
+        "routes": [r.model_dump(mode="json") for r in store.list()],
+    }
     body = json.dumps(payload, ensure_ascii=False, indent=2)
     return Response(content=body, media_type="application/json",
                     headers={"Content-Disposition": 'attachment; filename="geomirage-routes.json"'})
 
 
 class _RouteImportBody(BaseModel):
+    # ``version`` / ``categories`` are absent in older exports, which
+    # carried only ``routes``; those still import into existing categories.
+    version: int = 0
+    categories: list[RouteCategory] = Field(default_factory=list, max_length=1000)
     routes: list[SavedRoute] = Field(max_length=1000)
 
 
 @router.post("/saved/import")
 async def import_all_saved_routes(body: _RouteImportBody):
     """Merge imported routes into saved. Imports get fresh ids so they never collide."""
-    imported = await get_saved_routes_store().import_all(body.routes)
+    imported = await get_saved_routes_store().import_all(body.routes, body.categories)
     return {"imported": imported}
 
 

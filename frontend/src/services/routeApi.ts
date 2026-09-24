@@ -98,5 +98,13 @@ export const downloadGpx = (routeId: string, filename: string) =>
 export const downloadAllRoutes = (filename: string) =>
   downloadAuthed('/api/route/saved/export', filename)
 
-export const importAllRoutes = (data: { routes: SavedRoute[] }) =>
+/** Body of an export file. `version` / `categories` are missing from
+ *  older exports; the backend still accepts those. */
+export interface RoutesImportPayload {
+  version?: number
+  categories?: RouteCategory[]
+  routes: SavedRoute[]
+}
+
+export const importAllRoutes = (data: RoutesImportPayload) =>
   request<{ imported: number }>('POST', '/api/route/saved/import', data)
