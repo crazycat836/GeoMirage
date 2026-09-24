@@ -22,7 +22,7 @@ function fakeWs() {
     handlers.add(fn)
     return () => { handlers.delete(fn) }
   }
-  const send = (type: string, data: unknown) => {
+  const send = (type: WsMessage['type'], data: unknown) => {
     act(() => { handlers.forEach((h) => h({ type, data })) })
   }
   return { subscribe, send }
@@ -33,7 +33,7 @@ describe('primary runtime', () => {
     const ws = fakeWs()
     const { result, rerender } = renderHook(
       ({ primary }: { primary: string | null }) => useSimulation(ws.subscribe, { primaryUdid: primary }),
-      { initialProps: { primary: A } },
+      { initialProps: { primary: A as string | null } },
     )
     ws.send('device_connected', { udid: A })
     ws.send('device_connected', { udid: B })
@@ -53,7 +53,7 @@ describe('primary runtime', () => {
     const ws = fakeWs()
     const { result, rerender } = renderHook(
       ({ primary }: { primary: string | null }) => useSimulation(ws.subscribe, { primaryUdid: primary }),
-      { initialProps: { primary: A } },
+      { initialProps: { primary: A as string | null } },
     )
     ws.send('device_connected', { udid: A })
     ws.send('position_update', { udid: A, lat: 1, lng: 1 })

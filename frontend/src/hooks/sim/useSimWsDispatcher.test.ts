@@ -100,7 +100,7 @@ function createHarness(seed?: {
 
   const track = <T,>(key: { [K in keyof GlobalState]: GlobalState[K] extends T ? K : never }[keyof GlobalState]) =>
     vi.fn((action: SetStateAction<T>) => {
-      globals[key] = resolveAction(action, globals[key] as T) as GlobalState[typeof key]
+      Object.assign(globals, { [key]: resolveAction(action, globals[key] as T) })
     })
 
   // Spies delegate to the real useSimRuntimes functions (stable
@@ -457,7 +457,7 @@ describe('tunnel_degraded / tunnel_recovered / device_connected', () => {
 // ── (4) *_complete: run-end clearing ───────────────────────────────────
 
 describe('*_complete events', () => {
-  it.each(['multi_stop_complete', 'navigation_complete', 'random_walk_complete'])(
+  it.each(['multi_stop_complete', 'navigation_complete', 'random_walk_complete'] as const)(
     '%s collapses the runtime to idle and clears destination/eta + global overlays',
     (type) => {
       const h = createHarness({
@@ -731,7 +731,7 @@ describe('session overlays with two devices', () => {
 
 interface TableRow {
   name: string
-  type: string
+  type: WsMessage['type']
   data: unknown
   seed?: RuntimesMap
   fires: string[]
@@ -876,7 +876,7 @@ const TABLE: TableRow[] = [
   { name: 'teleport (unhandled)', type: 'teleport', data: { udid: UDID_A, lat: 1, lng: 2 }, fires: [] },
   { name: 'stop_reached (unhandled)', type: 'stop_reached', data: { udid: UDID_A }, fires: [] },
   { name: 'restored (unhandled)', type: 'restored', data: {}, fires: [] },
-  { name: 'totally unknown event type', type: 'not_a_real_event', data: {}, fires: [] },
+  { name: 'totally unknown event type', type: 'not_a_real_event' as WsMessage['type'], data: {}, fires: [] },
 ]
 
 describe('event → setters table', () => {

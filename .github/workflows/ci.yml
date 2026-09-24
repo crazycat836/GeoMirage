@@ -68,6 +68,9 @@ jobs:
       - run: npm ci
       - name: TypeScript type-check
         run: ./node_modules/.bin/tsc --noEmit -p tsconfig.json
+      - name: TypeScript type-check (tests)
+        # vitest only transpiles, so test files need their own tsc pass.
+        run: ./node_modules/.bin/tsc --noEmit -p tsconfig.test.json
       - name: Vitest
         run: npm test
 

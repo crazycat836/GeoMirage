@@ -35,7 +35,7 @@ function fakeWs() {
       handlers.add(fn)
       return () => { handlers.delete(fn) }
     },
-    send: (type: string, data: unknown) => {
+    send: (type: WsMessage['type'], data: unknown) => {
       act(() => { handlers.forEach((h) => h({ type, data })) })
     },
   }
