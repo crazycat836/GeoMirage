@@ -13,7 +13,9 @@ interpolated into a shell pipeline.
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
+import time
 
 
 def _kill_port_windows(port: int) -> None:
@@ -45,16 +47,55 @@ def _kill_port_windows(port: int) -> None:
         )
 
 
+# How long a listener gets to exit after SIGTERM before SIGKILL.
+_TERM_GRACE_S = 3.0
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 def _kill_port_posix(port: int) -> None:
-    """Kill listeners on *port* via lsof + kill -9."""
+    """SIGTERM (then SIGKILL) the processes LISTENING on TCP *port*.
+
+    ``-sTCP:LISTEN`` matters: a bare ``lsof -i :PORT`` also lists every
+    client connected to the port (a browser tab on the Vite dev server,
+    the packaged app's renderer on the backend port), and those must
+    not be killed.
+    """
     result = subprocess.run(
-        ["lsof", "-ti", f":{port}"],
+        ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
         capture_output=True, text=True,
     )
-    for pid in result.stdout.strip().splitlines():
-        pid = pid.strip()
-        if pid:
-            subprocess.run(["kill", "-9", pid], capture_output=True)
+    pids: list[int] = []
+    for raw in result.stdout.split():
+        try:
+            pid = int(raw)
+        except ValueError:
+            continue
+        if pid not in pids:
+            pids.append(pid)
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    deadline = time.monotonic() + _TERM_GRACE_S
+    remaining = [pid for pid in pids if _alive(pid)]
+    while remaining and time.monotonic() < deadline:
+        time.sleep(0.1)
+        remaining = [pid for pid in remaining if _alive(pid)]
+    for pid in remaining:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
 
 
 def kill_port(port: int) -> None:
