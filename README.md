@@ -10,6 +10,9 @@
   <a href="https://github.com/crazycat836/GeoMirage/releases/latest">
     <img alt="最新版本" src="https://img.shields.io/github/v/release/crazycat836/GeoMirage?style=for-the-badge&color=2d3748">
   </a>
+  <a href="https://github.com/crazycat836/GeoMirage/actions/workflows/ci.yml">
+    <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/crazycat836/GeoMirage/ci.yml?branch=main&style=for-the-badge&label=CI">
+  </a>
   <a href="LICENSE">
     <img alt="License" src="https://img.shields.io/badge/license-MIT-2d3748?style=for-the-badge">
   </a>
