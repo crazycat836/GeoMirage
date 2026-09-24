@@ -46,6 +46,20 @@ export default function SearchBar({ onTeleport, deviceConnected }: SearchBarProp
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Bumped by every search and by anything that makes an in-flight search
+  // obsolete (new short query, selection). A response only lands if its
+  // sequence number is still the latest, so a slow earlier request can't
+  // overwrite newer results or reopen the dropdown after a selection.
+  const searchSeqRef = useRef(0)
+
+  const cancelPendingSearch = useCallback(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current)
+      debounceRef.current = null
+    }
+    searchSeqRef.current++
+    setLoading(false)
+  }, [])
 
   // Parse coordinate from input
   const coordMatch = COORD_RE.exec(query.trim())
@@ -60,15 +74,18 @@ export default function SearchBar({ onTeleport, deviceConnected }: SearchBarProp
 
   // Address search with debounce
   const doSearch = useCallback(async (q: string) => {
+    const seq = ++searchSeqRef.current
     if (q.trim().length < 2 || COORD_RE.test(q.trim())) {
       setResults([])
       setError(false)
+      setLoading(false)
       return
     }
     setLoading(true)
     setError(false)
     try {
       const raw = await searchAddress(q, searchLang(lang))
+      if (seq !== searchSeqRef.current) return
       setResults((Array.isArray(raw) ? raw : []).map((r) => ({
         name: r.display_name,
         lat: r.lat,
@@ -76,21 +93,31 @@ export default function SearchBar({ onTeleport, deviceConnected }: SearchBarProp
       })))
       setOpen(true)
     } catch {
+      if (seq !== searchSeqRef.current) return
       // Real failure (transport / backend down / malformed envelope) — show
       // an error rather than the misleading "no results" empty state.
       setResults([])
       setError(true)
       setOpen(true)
     } finally {
-      setLoading(false)
+      if (seq === searchSeqRef.current) setLoading(false)
     }
   }, [lang])
 
   const handleInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setQuery(e.target.value)
+    const q = e.target.value
+    setQuery(q)
+    if (q.trim().length < 2) {
+      // Nothing to search: drop the pending debounce and any in-flight
+      // response instead of waiting for them to land.
+      cancelPendingSearch()
+      setResults([])
+      setError(false)
+      return
+    }
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => doSearch(e.target.value), 300)
-  }, [doSearch])
+    debounceRef.current = setTimeout(() => doSearch(q), 300)
+  }, [doSearch, cancelPendingSearch])
 
   const handleSelect = useCallback((lat: number, lng: number) => {
     // Result buttons are disabled without a device, but keyboard Enter
@@ -98,11 +125,12 @@ export default function SearchBar({ onTeleport, deviceConnected }: SearchBarProp
     // requirement can't be bypassed.
     if (!deviceConnected) return
     onTeleport(lat, lng)
+    cancelPendingSearch()
     setQuery('')
     setResults([])
     setOpen(false)
     inputRef.current?.blur()
-  }, [onTeleport, deviceConnected])
+  }, [onTeleport, deviceConnected, cancelPendingSearch])
 
   const handleSubmit = useCallback(() => {
     if (validCoord) {
