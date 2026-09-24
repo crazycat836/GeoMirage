@@ -284,6 +284,56 @@ def start_backend():
     return wait_for_port(BACKEND_PORT, "後端", proc=p)
 
 
+def _drop_to_sudo_user(env: dict) -> dict:
+    """Popen kwargs that run a child as the user who invoked ``sudo``.
+
+    Only the backend needs root (iOS 17+ tunnel). Vite running as root
+    leaves a root-owned ``node_modules/.vite`` cache that breaks every
+    later unprivileged ``vite`` / ``vite build`` with EACCES. When this
+    process is effective root and ``SUDO_UID`` / ``SUDO_GID`` are set,
+    return ``user`` / ``group`` / ``extra_groups`` for Popen and point
+    ``HOME`` / ``USER`` / ``LOGNAME`` in *env* at that user. Otherwise
+    return ``{}`` and leave *env* untouched.
+    """
+    if not _is_effective_root():
+        return {}
+    try:
+        uid = int(env["SUDO_UID"])
+        gid = int(env["SUDO_GID"])
+    except (KeyError, ValueError):
+        return {}
+    if uid == 0:
+        return {}
+    import pwd  # POSIX-only; _is_effective_root() is False on Windows
+
+    try:
+        pw = pwd.getpwuid(uid)
+    except KeyError:
+        return {}
+    env["HOME"] = pw.pw_dir
+    env["USER"] = pw.pw_name
+    env["LOGNAME"] = pw.pw_name
+    try:
+        groups = os.getgrouplist(pw.pw_name, gid)
+    except OSError:
+        groups = [gid]
+    return {"user": uid, "group": gid, "extra_groups": groups}
+
+
+def _remove_root_owned_vite_cache() -> None:
+    """Delete a ``node_modules/.vite`` cache left behind by a root Vite.
+
+    Earlier launcher versions ran Vite as root under sudo; the demoted
+    Vite can't write into that cache. It is only a cache, so drop it.
+    """
+    cache = os.path.join(FRONTEND, "node_modules", ".vite")
+    try:
+        if os.stat(cache).st_uid == 0:
+            shutil.rmtree(cache, ignore_errors=True)
+    except OSError:
+        pass
+
+
 def start_frontend():
     print(f"  [4/4] 啟動前端服務 (port {FRONTEND_PORT})...")
 
@@ -304,6 +354,12 @@ def start_frontend():
     if disable_flag not in node_opts:
         env["NODE_OPTIONS"] = f"{node_opts} {disable_flag}".strip()
 
+    # Under `sudo python3 start.py` only the backend keeps root; Vite runs
+    # as the invoking user so its cache in node_modules/.vite stays theirs.
+    demote = _drop_to_sudo_user(env)
+    if demote:
+        _remove_root_owned_vite_cache()
+
     # 用 --port 強制指定 port，避免 Vite 跳到其他 port
     # Bind the Vite dev server to loopback only. Without an explicit value
     # `--host` defaults to 0.0.0.0 and exposes the unauthenticated dev UI
@@ -314,6 +370,7 @@ def start_frontend():
         env=env,
         shell=(os.name == "nt"),
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+        **demote,
     )
     procs.append(p)
     return wait_for_port(FRONTEND_PORT, "前端", proc=p)
