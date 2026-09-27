@@ -54,3 +54,6 @@ CLAUDE.md
 
 # ── Idea drafts (local only, not ready to ship) ─────
 docs/ideas/
+
+# Agent instructions (local only)
+/AGENTS.md
