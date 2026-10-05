@@ -1,6 +1,6 @@
-pymobiledevice3>=11.12.4
-fastapi>=0.141.1
-uvicorn[standard]>=0.52.4
+pymobiledevice3>=11.20.2
+fastapi>=0.142.2
+uvicorn[standard]>=0.54.0
 websockets>=17.1
 gpxpy>=1.6.2
 httpx>=0.28.1
