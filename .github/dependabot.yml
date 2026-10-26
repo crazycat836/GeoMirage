@@ -8,8 +8,13 @@ updates:
       time: "09:00"
       timezone: Asia/Taipei
     # One PR per week instead of one per package; CI runs once.
+    # Security updates ignore version-update groups, so give them their own
+    # group; otherwise each vulnerable package opens a separate PR.
     groups:
       npm-all:
+        patterns: ["*"]
+      npm-security:
+        applies-to: security-updates
         patterns: ["*"]
     open-pull-requests-limit: 3
     commit-message:
@@ -24,6 +29,9 @@ updates:
       timezone: Asia/Taipei
     groups:
       pip-all:
+        patterns: ["*"]
+      pip-security:
+        applies-to: security-updates
         patterns: ["*"]
     open-pull-requests-limit: 3
     commit-message:
