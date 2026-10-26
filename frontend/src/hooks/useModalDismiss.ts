@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 
 interface UseModalDismissOptions {
   /** Whether the dialog / drawer is currently open. */
@@ -49,10 +49,15 @@ export function hasOpenLayer(): boolean {
 export function useEscLayer(active: boolean, onEscape: () => void, busy = false): void {
   const layerRef = useRef<symbol | null>(null)
 
+  // Both are layout effects so the layer and its keydown listener exist by
+  // the time the surface is on screen. As passive effects they ran after
+  // paint, leaving a window where the dialog was visible but Escape did
+  // nothing (under load this made UpdateChecker's Escape test flaky).
+  //
   // Track this surface on the layer stack for the whole time it is open.
   // Kept separate from the keydown effect so `busy` / `onEscape` identity
   // changes don't re-push the layer (which would wrongly move it to the top).
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!active) return
     const layer = Symbol('esc-layer')
     layerRef.current = layer
@@ -63,7 +68,7 @@ export function useEscLayer(active: boolean, onEscape: () => void, busy = false)
     }
   }, [active])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!active) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing) return
