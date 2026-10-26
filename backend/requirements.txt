@@ -1,8 +1,8 @@
-pymobiledevice3>=11.12.4
-fastapi>=0.141.1
-uvicorn[standard]>=0.52.4
-websockets>=17.1
+pymobiledevice3>=11.43.1
+fastapi>=0.161.1
+uvicorn[standard]>=0.54.0
+websockets>=17.3
 gpxpy>=1.6.2
 httpx>=0.28.1
-pydantic>=2.13.5
+pydantic>=2.14.1
 python-multipart>=0.0.32
