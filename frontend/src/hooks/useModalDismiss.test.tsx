@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
+import { useLayoutEffect } from 'react'
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, fireEvent, cleanup } from '@testing-library/react'
-import { useModalDismiss, useEscLayer } from './useModalDismiss'
+import { useModalDismiss, useEscLayer, hasOpenLayer } from './useModalDismiss'
 
 afterEach(cleanup)
 
@@ -115,5 +116,24 @@ describe('useEscLayer', () => {
 
     expect(closeMenu).toHaveBeenCalledOnce()
     expect(dismissDialog).not.toHaveBeenCalled()
+  })
+
+  // A later sibling's layout effect runs after the layer's own effects in
+  // the same commit, but before any passive effect. If the layer is on the
+  // stack here, Escape works from the first frame the surface is visible.
+  it('is on the stack by the time the surface is painted', () => {
+    let registeredAtCommit: boolean | null = null
+    function CommitProbe() {
+      useLayoutEffect(() => { registeredAtCommit = hasOpenLayer() }, [])
+      return null
+    }
+    render(
+      <>
+        <EscLayer active onEscape={vi.fn()} />
+        <CommitProbe />
+      </>,
+    )
+
+    expect(registeredAtCommit).toBe(true)
   })
 })
